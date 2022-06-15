@@ -1,3 +1,3 @@
 fn main() {
-    println!("Hello, world!");
+    wgpu_voxel_game::run();
 }
