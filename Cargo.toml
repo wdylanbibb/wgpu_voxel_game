@@ -10,3 +10,14 @@ winit = "0.26"
 env_logger = "0.9"
 log = "0.4"
 wgpu = "0.12"
+pollster = "0.2"
+cgmath = "0.18.0"
+bytemuck = { "version" = "1.9.1", "features" = [ "derive" ] }
+image = "0.24.2"
+anyhow = "1.0.58"
+instant = "0.1.12"
+
+[build-dependencies]
+anyhow = "1.0"
+fs_extra = "1.2"
+glob = "0.3"

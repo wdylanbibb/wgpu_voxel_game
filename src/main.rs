@@ -1,3 +1,5 @@
+use wgpu_voxel_game::run;
+
 fn main() {
-    wgpu_voxel_game::run();
+    pollster::block_on(run());
 }
