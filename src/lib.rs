@@ -7,7 +7,7 @@ mod camera;
 use std::iter;
 use std::path::Path;
 use bytemuck::{Pod, Zeroable};
-use cgmath::{InnerSpace, Matrix4, Rotation3, SquareMatrix, Vector4};
+use cgmath::{InnerSpace, Matrix4, Quaternion, Rotation3, SquareMatrix, Vector2, Vector3, Vector4};
 use wgpu::{BufferAddress, VertexAttribute, VertexBufferLayout, VertexStepMode};
 use wgpu::util::DeviceExt;
 
@@ -44,8 +44,8 @@ impl CameraUniform {
 }
 
 struct Instance {
-	position: cgmath::Vector3<f32>,
-	rotation: cgmath::Quaternion<f32>,
+	position: Vector3<f32>,
+	rotation: Quaternion<f32>,
 }
 
 #[repr(C)]
@@ -122,15 +122,10 @@ impl State {
 				&wgpu::DeviceDescriptor {
 					label: None,
 					features: wgpu::Features::empty(),
-					// WebGL doesn't support all of wgpu's features, so if
-					// we're building for the web we'll have to disable some.
-					limits: if cfg!(target_arch = "wasm32") {
-						wgpu::Limits::downlevel_webgl2_defaults()
-					} else {
-						wgpu::Limits::default()
-					},
+					limits: wgpu::Limits::default()
 				},
 				// Some(&std::path::Path::new("trace")), // Trace path
+
 				None,
 			)
 			.await
@@ -256,9 +251,9 @@ impl State {
 				let x = SPACE_BETWEEN * (x as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
 				let z = SPACE_BETWEEN * (z as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
 
-				let position = cgmath::Vector3 {x, y: 0.0, z };
+				let position = Vector3 {x, y: 0.0, z };
 
-				let rotation = cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(0.0));
+				let rotation = Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(0.0));
 
 				Instance {
 					position, rotation

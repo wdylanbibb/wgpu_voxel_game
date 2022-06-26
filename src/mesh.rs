@@ -67,10 +67,12 @@ impl Material {
 
 pub struct Mesh {
 	pub name: String,
-	pub vertex_buffer: wgpu::Buffer,
-	pub index_buffer: wgpu::Buffer,
-	pub num_elements: u32,
+	pub vertices: Vec<MeshVertex>,
+	pub indices: Vec<u32>,
 	pub material: Material,
+	vertex_buffer: wgpu::Buffer,
+	index_buffer: wgpu::Buffer,
+	num_elements: u32,
 }
 
 impl Mesh {
@@ -99,11 +101,55 @@ impl Mesh {
 
 		Mesh {
 			name: String::from(name),
+			vertices,
+			indices: indices.to_vec(),
+			material,
 			vertex_buffer,
 			index_buffer,
 			num_elements: indices.len() as u32,
-			material
 		}
+	}
+
+	pub fn update_buffers(&mut self, device: &wgpu::Device) {
+		self.vertex_buffer = device.create_buffer_init(
+			&wgpu::util::BufferInitDescriptor {
+				contents: bytemuck::cast_slice(&self.vertices),
+				usage: wgpu::BufferUsages::VERTEX,
+				label: Some(&format!("{:?} Vertex Buffer", self.name)),
+			}
+		);
+		self.index_buffer = device.create_buffer_init(
+			&wgpu::util::BufferInitDescriptor {
+				contents: bytemuck::cast_slice(&self.indices),
+				usage: wgpu::BufferUsages::INDEX,
+				label: Some(&format!("{:?} Index Buffer", self.name)),
+			}
+		);
+		self.num_elements = self.indices.len() as u32;
+	}
+
+	pub fn vertex_buffer(&self) -> &wgpu::Buffer {
+		&self.vertex_buffer
+	}
+
+	pub fn index_buffer(&self) -> &wgpu::Buffer {
+		&self.index_buffer
+	}
+
+	pub fn num_elements(&self) -> u32 {
+		self.num_elements
+	}
+
+	pub fn vertex_buffer_mut(&mut self) -> &mut wgpu::Buffer {
+		&mut self.vertex_buffer
+	}
+
+	pub fn index_buffer_mut(&mut self) -> &mut wgpu::Buffer {
+		&mut self.index_buffer
+	}
+
+	pub fn num_elements_mut(&mut self) -> &mut u32 {
+		&mut self.num_elements
 	}
 
 	pub fn quad(name: &str, device: &wgpu::Device, material: Material) -> Self {
@@ -141,10 +187,10 @@ impl <'a, 'b> DrawMesh<'b> for wgpu::RenderPass<'a> where 'b: 'a {
 	}
 
 	fn draw_mesh_instanced(&mut self, mesh: &'b Mesh, instances: Range<u32>, camera_bind_group: &'b BindGroup) {
-		self.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-		self.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+		self.set_vertex_buffer(0, mesh.vertex_buffer().slice(..));
+		self.set_index_buffer(mesh.index_buffer().slice(..), wgpu::IndexFormat::Uint32);
 		self.set_bind_group(0, &mesh.material.bind_group, &[]);
 		self.set_bind_group(1, camera_bind_group, &[]);
-		self.draw_indexed(0..mesh.num_elements, 0, instances);
+		self.draw_indexed(0..mesh.num_elements(), 0, instances);
 	}
 }
