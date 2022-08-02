@@ -1,7 +1,6 @@
 use std::path::Path;
 use image::GenericImageView;
 use anyhow::*;
-use bytemuck::from_bytes;
 
 pub struct Texture {
 	pub texture: wgpu::Texture,

@@ -77,7 +77,7 @@ pub struct Mesh {
 
 impl Mesh {
 	pub fn new(name: &str, vertices: &[Vector3<f32>], tex_coords: &[Vector2<f32>], indices: &[u32], device: &wgpu::Device, material: Material) -> Self {
-		let mut vertices = vertices.iter().zip(tex_coords.iter()).map(|(position, tex_coord)| {
+		let vertices = vertices.iter().zip(tex_coords.iter()).map(|(position, tex_coord)| {
 			MeshVertex {
 				position: *position,
 				tex_coord: *tex_coord,
@@ -138,18 +138,6 @@ impl Mesh {
 
 	pub fn num_elements(&self) -> u32 {
 		self.num_elements
-	}
-
-	pub fn vertex_buffer_mut(&mut self) -> &mut wgpu::Buffer {
-		&mut self.vertex_buffer
-	}
-
-	pub fn index_buffer_mut(&mut self) -> &mut wgpu::Buffer {
-		&mut self.index_buffer
-	}
-
-	pub fn num_elements_mut(&mut self) -> &mut u32 {
-		&mut self.num_elements
 	}
 
 	pub fn quad(name: &str, device: &wgpu::Device, material: Material) -> Self {

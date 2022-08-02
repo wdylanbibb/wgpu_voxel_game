@@ -7,7 +7,7 @@ mod camera;
 use std::iter;
 use std::path::Path;
 use bytemuck::{Pod, Zeroable};
-use cgmath::{InnerSpace, Matrix4, Quaternion, Rotation3, SquareMatrix, Vector2, Vector3, Vector4};
+use cgmath::{InnerSpace, Matrix4, Quaternion, Rotation3, SquareMatrix, Vector3, Vector4};
 use wgpu::{BufferAddress, VertexAttribute, VertexBufferLayout, VertexStepMode};
 use wgpu::util::DeviceExt;
 
@@ -39,7 +39,7 @@ impl CameraUniform {
 
 	fn update_view_proj(&mut self, camera: &camera::Camera, projection: &camera::Projection) {
 		self.view_position = camera.position.to_homogeneous();
-		self.view_proj = (projection.calc_matrix() * camera.calc_matrix())
+		self.view_proj = projection.calc_matrix() * camera.calc_matrix();
 	}
 }
 
@@ -78,7 +78,7 @@ impl InstanceRaw {
 	}
 }
 
-const NUM_INSTANCES_PER_ROW: u32 = 1;
+const NUM_INSTANCES_PER_ROW: u32 = 5;
 
 struct State {
 	surface: wgpu::Surface,
@@ -133,7 +133,7 @@ impl State {
 
 		let config = wgpu::SurfaceConfiguration {
 			usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-			format: surface.get_preferred_format(&adapter).unwrap(),
+			format: surface.get_supported_formats(&adapter)[0],
 			width: size.width,
 			height: size.height,
 			present_mode: wgpu::PresentMode::Fifo,
@@ -245,20 +245,17 @@ impl State {
 			mesh::Mesh::quad("Quad", &device, material)
 		};
 
-		const SPACE_BETWEEN: f32 = 3.0;
-		let instances = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
-			(0..NUM_INSTANCES_PER_ROW).map(move |x| {
-				let x = SPACE_BETWEEN * (x as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
-				let z = SPACE_BETWEEN * (z as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
+		const SPACE_BETWEEN: f32 = 2.0;
+		let instances = (0..NUM_INSTANCES_PER_ROW).map(move |x| {
+			let x = SPACE_BETWEEN * (x as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
 
-				let position = Vector3 {x, y: 0.0, z };
+			let position = Vector3 {x, y: 0.0, z: 0.0 };
 
-				let rotation = Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(0.0));
+			let rotation = Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(0.0));
 
-				Instance {
-					position, rotation
-				}
-			})
+			Instance {
+				position, rotation
+			}
 		}).collect::<Vec<_>>();
 
 		let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
@@ -371,7 +368,7 @@ impl State {
 		{
 			let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
 				label: Some("Render Pass"),
-				color_attachments: &[wgpu::RenderPassColorAttachment {
+				color_attachments: &[Some(wgpu::RenderPassColorAttachment {
 					view: &view,
 					resolve_target: None,
 					ops: wgpu::Operations {
@@ -383,7 +380,7 @@ impl State {
 						}),
 						store: true,
 					},
-				}],
+				})],
 				depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
 					view: &self.depth_texture.view,
 					depth_ops: Some(wgpu::Operations {
@@ -418,7 +415,7 @@ fn create_render_pipeline(
 	vertex_layouts: &[VertexBufferLayout],
 	shader: wgpu::ShaderModuleDescriptor,
 ) -> wgpu::RenderPipeline {
-	let shader = device.create_shader_module(&shader);
+	let shader = device.create_shader_module(shader);
 
 	device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
 		label: Some("Render Pipeline"),
@@ -431,14 +428,14 @@ fn create_render_pipeline(
 		fragment: Some(wgpu::FragmentState {
 			module: &shader,
 			entry_point: "fs_main",
-			targets: &[wgpu::ColorTargetState {
+			targets: &[Some(wgpu::ColorTargetState {
 				format: color_format,
 				blend: Some(wgpu::BlendState {
 					alpha: wgpu::BlendComponent::REPLACE,
 					color: wgpu::BlendComponent::REPLACE,
 				}),
 				write_mask: wgpu::ColorWrites::ALL,
-			}],
+			})],
 		}),
 		primitive: wgpu::PrimitiveState {
 			topology: wgpu::PrimitiveTopology::TriangleList,
