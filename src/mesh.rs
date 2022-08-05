@@ -162,6 +162,127 @@ impl Mesh {
 
 		Self::new(name, QUAD_VERTS, QUAD_TEX_COORDS, QUAD_INDICES, device, material)
 	}
+
+	pub fn cube(name: &str, device: &wgpu::Device, material: Material) -> Self {
+		/*
+		    (-1, 1, -1) /-------------------| (1, 1, -1)
+				      / |                  /|
+				    /   |                /  |
+	  (-1, 1, 1)  /     |    (1, 1, 1) /    |
+				 |------|------------|      |
+				 |      |            |      |
+				 |      |            |      |
+				 |      |------------|------| (1, -1,- 1)
+				 |     /(-1, -1, -1) |     /
+				 |   /               |   /
+				 | /                 | /
+	 (-1, -1, 1) |-------------------| (1, -1, 1)
+		*/
+
+		const CUBE_VERTS: &[Vector3<f32>; 24] = &[
+			// Front Face
+			Vector3::new(-1.0, -1.0, 1.0),
+			Vector3::new(1.0, -1.0, 1.0),
+			Vector3::new(1.0, 1.0, 1.0),
+			Vector3::new(-1.0, 1.0, 1.0),
+
+			// Back Face
+			Vector3::new(1.0, -1.0, -1.0),
+			Vector3::new(-1.0, -1.0, -1.0),
+			Vector3::new(-1.0, 1.0, -1.0),
+			Vector3::new(1.0, 1.0, -1.0),
+
+			// Top Face
+			Vector3::new(-1.0, 1.0, 1.0),
+			Vector3::new(1.0, 1.0, 1.0),
+			Vector3::new(1.0, 1.0, -1.0),
+			Vector3::new(-1.0, 1.0, -1.0),
+
+			// Bottom Face
+			Vector3::new(-1.0, -1.0, -1.0),
+			Vector3::new(1.0, -1.0, -1.0),
+			Vector3::new(1.0, -1.0, 1.0),
+			Vector3::new(-1.0, -1.0, 1.0),
+
+			// Left Face
+			Vector3::new(-1.0, -1.0, -1.0),
+			Vector3::new(-1.0, -1.0, 1.0),
+			Vector3::new(-1.0, 1.0, 1.0),
+			Vector3::new(-1.0, 1.0, -1.0),
+
+			// Right Face
+			Vector3::new(1.0, -1.0, 1.0),
+			Vector3::new(1.0, -1.0, -1.0),
+			Vector3::new(1.0, 1.0, -1.0),
+			Vector3::new(1.0, 1.0, 1.0),
+		];
+
+		const CUBE_TEX_COORDS: &[Vector2<f32>; 24] = &[
+			// Front Face
+			Vector2::new(0.0, 1.0),
+			Vector2::new(1.0, 1.0),
+			Vector2::new(1.0, 0.0),
+			Vector2::new(0.0, 0.0),
+
+			// Back Face
+			Vector2::new(1.0, 1.0),
+			Vector2::new(0.0, 1.0),
+			Vector2::new(0.0, 0.0),
+			Vector2::new(1.0, 0.0),
+
+			// Top Face
+			Vector2::new(0.0, 1.0),
+			Vector2::new(1.0, 1.0),
+			Vector2::new(1.0, 0.0),
+			Vector2::new(0.0, 0.0),
+
+			// Bottom Face
+			Vector2::new(1.0, 1.0),
+			Vector2::new(0.0, 1.0),
+			Vector2::new(0.0, 0.0),
+			Vector2::new(1.0, 0.0),
+
+			// Left Face
+			Vector2::new(0.0, 1.0),
+			Vector2::new(1.0, 1.0),
+			Vector2::new(1.0, 0.0),
+			Vector2::new(0.0, 0.0),
+
+			// Right Face
+			Vector2::new(1.0, 1.0),
+			Vector2::new(0.0, 1.0),
+			Vector2::new(0.0, 0.0),
+			Vector2::new(1.0, 0.0),
+		];
+
+		const CUBE_INDICES: &[u32; 36] = &[
+			// Front Face
+			0, 1, 2,
+			2, 3, 0,
+
+			// Back Face
+			4, 5, 6,
+			6, 7, 4,
+
+			// Top Face
+			8, 9, 10,
+			10, 11, 8,
+
+			// Bottom Face
+			12, 13, 14,
+			14, 15, 12,
+
+			// Left Face
+			16, 17, 18,
+			18, 19, 16,
+
+			// Right Face
+			20, 21, 22,
+			22, 23, 20,
+		];
+
+		Self::new(name, CUBE_VERTS, CUBE_TEX_COORDS, CUBE_INDICES, device, material)
+	}
 }
 
 pub trait DrawMesh<'a> {

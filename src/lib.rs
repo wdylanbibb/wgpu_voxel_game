@@ -78,7 +78,7 @@ impl InstanceRaw {
 	}
 }
 
-const NUM_INSTANCES_PER_ROW: u32 = 5;
+const NUM_INSTANCES_PER_ROW: u32 = 1;
 
 struct State {
 	surface: wgpu::Surface,
@@ -242,20 +242,24 @@ impl State {
 				&texture_bind_group_layout,
 			);
 
-			mesh::Mesh::quad("Quad", &device, material)
+			mesh::Mesh::cube("Cube", &device, material)
 		};
 
 		const SPACE_BETWEEN: f32 = 2.0;
-		let instances = (0..NUM_INSTANCES_PER_ROW).map(move |x| {
-			let x = SPACE_BETWEEN * (x as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
+		let instances = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
+			(0..NUM_INSTANCES_PER_ROW).map(move |x| {
+				let x = SPACE_BETWEEN * (x as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
+				let z = SPACE_BETWEEN * (z as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
 
-			let position = Vector3 {x, y: 0.0, z: 0.0 };
+				let position = Vector3 { x, y: 0.0, z };
 
-			let rotation = Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(0.0));
+				let rotation = Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(0.0));
 
-			Instance {
-				position, rotation
-			}
+				Instance {
+					position,
+					rotation
+				}
+			})
 		}).collect::<Vec<_>>();
 
 		let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
