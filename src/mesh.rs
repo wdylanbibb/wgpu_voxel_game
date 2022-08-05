@@ -76,6 +76,123 @@ pub struct Mesh {
 }
 
 impl Mesh {
+	/*
+		    (-1, 1, -1) /-------------------| (1, 1, -1)
+				      / |                  /|
+				    /   |                /  |
+	  (-1, 1, 1)  /     |    (1, 1, 1) /    |
+				 |------|------------|      |
+				 |      |            |      |
+				 |      |            |      |
+				 |      |------------|------| (1, -1,- 1)
+				 |     /(-1, -1, -1) |     /
+				 |   /               |   /
+				 | /                 | /
+	 (-1, -1, 1) |-------------------| (1, -1, 1)
+		*/
+
+	pub const CUBE_VERTS: [Vector3<f32>; 24] = [
+		// Front Face
+		Vector3::new(-1.0, -1.0, 1.0),
+		Vector3::new(1.0, -1.0, 1.0),
+		Vector3::new(1.0, 1.0, 1.0),
+		Vector3::new(-1.0, 1.0, 1.0),
+
+		// Back Face
+		Vector3::new(1.0, -1.0, -1.0),
+		Vector3::new(-1.0, -1.0, -1.0),
+		Vector3::new(-1.0, 1.0, -1.0),
+		Vector3::new(1.0, 1.0, -1.0),
+
+		// Top Face
+		Vector3::new(-1.0, 1.0, 1.0),
+		Vector3::new(1.0, 1.0, 1.0),
+		Vector3::new(1.0, 1.0, -1.0),
+		Vector3::new(-1.0, 1.0, -1.0),
+
+		// Bottom Face
+		Vector3::new(-1.0, -1.0, -1.0),
+		Vector3::new(1.0, -1.0, -1.0),
+		Vector3::new(1.0, -1.0, 1.0),
+		Vector3::new(-1.0, -1.0, 1.0),
+
+		// Left Face
+		Vector3::new(-1.0, -1.0, -1.0),
+		Vector3::new(-1.0, -1.0, 1.0),
+		Vector3::new(-1.0, 1.0, 1.0),
+		Vector3::new(-1.0, 1.0, -1.0),
+
+		// Right Face
+		Vector3::new(1.0, -1.0, 1.0),
+		Vector3::new(1.0, -1.0, -1.0),
+		Vector3::new(1.0, 1.0, -1.0),
+		Vector3::new(1.0, 1.0, 1.0),
+	];
+
+	pub const CUBE_TEX_COORDS: [Vector2<f32>; 24] = [
+		// Front Face
+		Vector2::new(0.0, 1.0),
+		Vector2::new(1.0, 1.0),
+		Vector2::new(1.0, 0.0),
+		Vector2::new(0.0, 0.0),
+
+		// Back Face
+		Vector2::new(1.0, 1.0),
+		Vector2::new(0.0, 1.0),
+		Vector2::new(0.0, 0.0),
+		Vector2::new(1.0, 0.0),
+
+		// Top Face
+		Vector2::new(0.0, 1.0),
+		Vector2::new(1.0, 1.0),
+		Vector2::new(1.0, 0.0),
+		Vector2::new(0.0, 0.0),
+
+		// Bottom Face
+		Vector2::new(1.0, 1.0),
+		Vector2::new(0.0, 1.0),
+		Vector2::new(0.0, 0.0),
+		Vector2::new(1.0, 0.0),
+
+		// Left Face
+		Vector2::new(0.0, 1.0),
+		Vector2::new(1.0, 1.0),
+		Vector2::new(1.0, 0.0),
+		Vector2::new(0.0, 0.0),
+
+		// Right Face
+		Vector2::new(1.0, 1.0),
+		Vector2::new(0.0, 1.0),
+		Vector2::new(0.0, 0.0),
+		Vector2::new(1.0, 0.0),
+	];
+
+	pub const CUBE_INDICES: [u32; 36] = [
+		// Front Face
+		0, 1, 2,
+		2, 3, 0,
+
+		// Back Face
+		4, 5, 6,
+		6, 7, 4,
+
+		// Top Face
+		8, 9, 10,
+		10, 11, 8,
+
+		// Bottom Face
+		12, 13, 14,
+		14, 15, 12,
+
+		// Left Face
+		16, 17, 18,
+		18, 19, 16,
+
+		// Right Face
+		20, 21, 22,
+		22, 23, 20,
+	];
+
 	pub fn new(name: &str, vertices: &[Vector3<f32>], tex_coords: &[Vector2<f32>], indices: &[u32], device: &wgpu::Device, material: Material) -> Self {
 		let vertices = vertices.iter().zip(tex_coords.iter()).map(|(position, tex_coord)| {
 			MeshVertex {
@@ -140,148 +257,31 @@ impl Mesh {
 		self.num_elements
 	}
 
-	pub fn quad(name: &str, device: &wgpu::Device, material: Material) -> Self {
-		const QUAD_VERTS: &[Vector3<f32>; 4] = &[
-			Vector3::new(-1.0, -1.0, 0.0),
-			Vector3::new(1.0, -1.0, 0.0),
-			Vector3::new(1.0, 1.0, 0.0),
-			Vector3::new(-1.0, 1.0, 0.0),
-		];
-
-		const QUAD_TEX_COORDS: &[Vector2<f32>; 4] = &[
-			Vector2::new(0.0, 1.0),
-			Vector2::new(1.0, 1.0),
-			Vector2::new(1.0, 0.0),
-			Vector2::new(0.0, 0.0),
-		];
-
-		const QUAD_INDICES: &[u32; 6] = &[
-			0, 1, 2,
-			2, 3, 0,
-		];
-
-		Self::new(name, QUAD_VERTS, QUAD_TEX_COORDS, QUAD_INDICES, device, material)
-	}
+	// pub fn quad(name: &str, device: &wgpu::Device, material: Material) -> Self {
+	// 	const QUAD_VERTS: &[Vector3<f32>; 4] = &[
+	// 		Vector3::new(-1.0, -1.0, 0.0),
+	// 		Vector3::new(1.0, -1.0, 0.0),
+	// 		Vector3::new(1.0, 1.0, 0.0),
+	// 		Vector3::new(-1.0, 1.0, 0.0),
+	// 	];
+	//
+	// 	const QUAD_TEX_COORDS: &[Vector2<f32>; 4] = &[
+	// 		Vector2::new(0.0, 1.0),
+	// 		Vector2::new(1.0, 1.0),
+	// 		Vector2::new(1.0, 0.0),
+	// 		Vector2::new(0.0, 0.0),
+	// 	];
+	//
+	// 	const QUAD_INDICES: &[u32; 6] = &[
+	// 		0, 1, 2,
+	// 		2, 3, 0,
+	// 	];
+	//
+	// 	Self::new(name, QUAD_VERTS, QUAD_TEX_COORDS, QUAD_INDICES, device, material)
+	// }
 
 	pub fn cube(name: &str, device: &wgpu::Device, material: Material) -> Self {
-		/*
-		    (-1, 1, -1) /-------------------| (1, 1, -1)
-				      / |                  /|
-				    /   |                /  |
-	  (-1, 1, 1)  /     |    (1, 1, 1) /    |
-				 |------|------------|      |
-				 |      |            |      |
-				 |      |            |      |
-				 |      |------------|------| (1, -1,- 1)
-				 |     /(-1, -1, -1) |     /
-				 |   /               |   /
-				 | /                 | /
-	 (-1, -1, 1) |-------------------| (1, -1, 1)
-		*/
-
-		const CUBE_VERTS: &[Vector3<f32>; 24] = &[
-			// Front Face
-			Vector3::new(-1.0, -1.0, 1.0),
-			Vector3::new(1.0, -1.0, 1.0),
-			Vector3::new(1.0, 1.0, 1.0),
-			Vector3::new(-1.0, 1.0, 1.0),
-
-			// Back Face
-			Vector3::new(1.0, -1.0, -1.0),
-			Vector3::new(-1.0, -1.0, -1.0),
-			Vector3::new(-1.0, 1.0, -1.0),
-			Vector3::new(1.0, 1.0, -1.0),
-
-			// Top Face
-			Vector3::new(-1.0, 1.0, 1.0),
-			Vector3::new(1.0, 1.0, 1.0),
-			Vector3::new(1.0, 1.0, -1.0),
-			Vector3::new(-1.0, 1.0, -1.0),
-
-			// Bottom Face
-			Vector3::new(-1.0, -1.0, -1.0),
-			Vector3::new(1.0, -1.0, -1.0),
-			Vector3::new(1.0, -1.0, 1.0),
-			Vector3::new(-1.0, -1.0, 1.0),
-
-			// Left Face
-			Vector3::new(-1.0, -1.0, -1.0),
-			Vector3::new(-1.0, -1.0, 1.0),
-			Vector3::new(-1.0, 1.0, 1.0),
-			Vector3::new(-1.0, 1.0, -1.0),
-
-			// Right Face
-			Vector3::new(1.0, -1.0, 1.0),
-			Vector3::new(1.0, -1.0, -1.0),
-			Vector3::new(1.0, 1.0, -1.0),
-			Vector3::new(1.0, 1.0, 1.0),
-		];
-
-		const CUBE_TEX_COORDS: &[Vector2<f32>; 24] = &[
-			// Front Face
-			Vector2::new(0.0, 1.0),
-			Vector2::new(1.0, 1.0),
-			Vector2::new(1.0, 0.0),
-			Vector2::new(0.0, 0.0),
-
-			// Back Face
-			Vector2::new(1.0, 1.0),
-			Vector2::new(0.0, 1.0),
-			Vector2::new(0.0, 0.0),
-			Vector2::new(1.0, 0.0),
-
-			// Top Face
-			Vector2::new(0.0, 1.0),
-			Vector2::new(1.0, 1.0),
-			Vector2::new(1.0, 0.0),
-			Vector2::new(0.0, 0.0),
-
-			// Bottom Face
-			Vector2::new(1.0, 1.0),
-			Vector2::new(0.0, 1.0),
-			Vector2::new(0.0, 0.0),
-			Vector2::new(1.0, 0.0),
-
-			// Left Face
-			Vector2::new(0.0, 1.0),
-			Vector2::new(1.0, 1.0),
-			Vector2::new(1.0, 0.0),
-			Vector2::new(0.0, 0.0),
-
-			// Right Face
-			Vector2::new(1.0, 1.0),
-			Vector2::new(0.0, 1.0),
-			Vector2::new(0.0, 0.0),
-			Vector2::new(1.0, 0.0),
-		];
-
-		const CUBE_INDICES: &[u32; 36] = &[
-			// Front Face
-			0, 1, 2,
-			2, 3, 0,
-
-			// Back Face
-			4, 5, 6,
-			6, 7, 4,
-
-			// Top Face
-			8, 9, 10,
-			10, 11, 8,
-
-			// Bottom Face
-			12, 13, 14,
-			14, 15, 12,
-
-			// Left Face
-			16, 17, 18,
-			18, 19, 16,
-
-			// Right Face
-			20, 21, 22,
-			22, 23, 20,
-		];
-
-		Self::new(name, CUBE_VERTS, CUBE_TEX_COORDS, CUBE_INDICES, device, material)
+		Self::new(name, &Mesh::CUBE_VERTS, &Mesh::CUBE_TEX_COORDS, &Mesh::CUBE_INDICES, device, material)
 	}
 }
 
