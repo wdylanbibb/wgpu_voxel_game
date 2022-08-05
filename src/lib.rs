@@ -7,8 +7,8 @@ mod camera;
 use std::iter;
 use std::path::Path;
 use bytemuck::{Pod, Zeroable};
-use cgmath::{InnerSpace, Matrix4, Quaternion, Rotation3, SquareMatrix, Vector3, Vector4};
-use wgpu::{BufferAddress, VertexAttribute, VertexBufferLayout, VertexStepMode};
+use cgmath::{Matrix4, One, SquareMatrix, Vector3, Vector4};
+use wgpu::{VertexBufferLayout};
 use wgpu::util::DeviceExt;
 
 use winit::{
@@ -17,7 +17,7 @@ use winit::{
 	window::{Window, WindowBuilder},
 	dpi::PhysicalSize,
 };
-use crate::mesh::{DrawMesh, Vertex};
+use crate::mesh::{DrawChunk, Vertex};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -43,43 +43,6 @@ impl CameraUniform {
 	}
 }
 
-struct Instance {
-	position: Vector3<f32>,
-	rotation: Quaternion<f32>,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone)]
-struct InstanceRaw {
-	model: Matrix4<f32>,
-}
-
-unsafe impl Pod for InstanceRaw {}
-unsafe impl Zeroable for InstanceRaw {}
-
-impl Instance {
-	fn to_raw(&self) -> InstanceRaw {
-		let model = Matrix4::from_translation(self.position) * Matrix4::from(self.rotation);
-		InstanceRaw {
-			model,
-		}
-	}
-}
-
-impl InstanceRaw {
-	fn desc<'a>() -> VertexBufferLayout<'a> {
-		static ATTRIBS: [VertexAttribute; 4] = wgpu::vertex_attr_array![5 => Float32x4, 6 => Float32x4, 7 => Float32x4, 8 => Float32x4];
-		use std::mem;
-		VertexBufferLayout {
-			array_stride: mem::size_of::<InstanceRaw>() as BufferAddress,
-			step_mode: VertexStepMode::Instance,
-			attributes: &ATTRIBS,
-		}
-	}
-}
-
-const NUM_INSTANCES_PER_ROW: u32 = 1;
-
 struct State {
 	surface: wgpu::Surface,
 	device: wgpu::Device,
@@ -93,9 +56,7 @@ struct State {
 	camera_buffer: wgpu::Buffer,
 	camera_bind_group: wgpu::BindGroup,
 	render_pipeline: wgpu::RenderPipeline,
-	mesh: mesh::Mesh,
-	instances: Vec<Instance>,
-	instance_buffer: wgpu::Buffer,
+	chunk: mesh::Chunk,
 	depth_texture: texture::Texture,
 	mouse_pressed: bool,
 }
@@ -229,12 +190,12 @@ impl State {
 				&render_pipeline_layout,
 				config.format,
 				Some(texture::Texture::DEPTH_FORMAT),
-				&[mesh::MeshVertex::desc(), InstanceRaw::desc()],
+				&[mesh::MeshVertex::desc(), mesh::InstanceRaw::desc()],
 				shader,
 			)
 		};
 
-		let mesh = {
+		let mut chunk = {
 			let material = mesh::Material::new(
 				"Cobble Mat",
 				texture::Texture::new(Path::new("cobblestone.png"), false, &device, &queue),
@@ -242,34 +203,10 @@ impl State {
 				&texture_bind_group_layout,
 			);
 
-			mesh::Mesh::cube("Cube", &device, material)
+			mesh::Chunk::new(material, &device)
 		};
 
-		const SPACE_BETWEEN: f32 = 2.0;
-		let instances = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
-			(0..NUM_INSTANCES_PER_ROW).map(move |x| {
-				let x = SPACE_BETWEEN * (x as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
-				let z = SPACE_BETWEEN * (z as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
-
-				let position = Vector3 { x, y: 0.0, z };
-
-				let rotation = Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(0.0));
-
-				Instance {
-					position,
-					rotation
-				}
-			})
-		}).collect::<Vec<_>>();
-
-		let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
-		let instance_buffer = device.create_buffer_init(
-			&wgpu::util::BufferInitDescriptor {
-				label: Some("Instance Buffer"),
-				contents: bytemuck::cast_slice(&instance_data),
-				usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-			}
-		);
+		chunk.add_block(Vector3::new(0.0, 0.0, 0.0), &device);
 
 		let depth_texture = texture::Texture::create_depth_texture(&device, &config, "depth texture");
 
@@ -286,9 +223,7 @@ impl State {
 			camera_buffer,
 			camera_bind_group,
 			render_pipeline,
-			mesh,
-			instances,
-			instance_buffer,
+			chunk,
 			depth_texture,
 			mouse_pressed: false
 		}
@@ -394,12 +329,10 @@ impl State {
 					stencil_ops: None,
 				}),
 			});
-			render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-
 			render_pass.set_pipeline(&self.render_pipeline);
-			render_pass.draw_mesh_instanced(
-				&self.mesh,
-				0..self.instances.len() as u32,
+
+			render_pass.draw_chunk(
+				&self.chunk,
 				&self.camera_bind_group,
 			);
 		}
