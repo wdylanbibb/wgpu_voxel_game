@@ -1,13 +1,14 @@
 extern crate core;
 
-mod mesh;
 mod texture;
 mod camera;
+mod chunk;
+mod material;
 
 use std::iter;
 use std::path::Path;
 use bytemuck::{Pod, Zeroable};
-use cgmath::{Matrix4, One, SquareMatrix, Vector3, Vector4};
+use cgmath::{Matrix4, SquareMatrix, Vector3, Vector4};
 use wgpu::{VertexBufferLayout};
 use wgpu::util::DeviceExt;
 
@@ -17,7 +18,7 @@ use winit::{
 	window::{Window, WindowBuilder},
 	dpi::PhysicalSize,
 };
-use crate::mesh::{DrawChunk, Vertex};
+use crate::chunk::{DrawChunk, Vertex};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -56,7 +57,7 @@ struct State {
 	camera_buffer: wgpu::Buffer,
 	camera_bind_group: wgpu::BindGroup,
 	render_pipeline: wgpu::RenderPipeline,
-	chunk: mesh::Chunk,
+	chunk: chunk::Chunk,
 	depth_texture: texture::Texture,
 	mouse_pressed: bool,
 }
@@ -127,7 +128,7 @@ impl State {
 
 		let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
 		let projection = camera::Projection::new(config.width, config.height, cgmath::Deg(45.0), 0.1, 100.0);
-		let camera_controller = camera::CameraController::new(4.0, 0.4);
+		let camera_controller = camera::CameraController::new(16.0, 0.4);
 
 		let mut camera_uniform = CameraUniform::new();
 		camera_uniform.update_view_proj(&camera, &projection);
@@ -190,23 +191,25 @@ impl State {
 				&render_pipeline_layout,
 				config.format,
 				Some(texture::Texture::DEPTH_FORMAT),
-				&[mesh::MeshVertex::desc(), mesh::InstanceRaw::desc()],
+				&[chunk::ChunkVertex::desc()],
 				shader,
 			)
 		};
 
 		let mut chunk = {
-			let material = mesh::Material::new(
+			let material = material::Material::new(
 				"Cobble Mat",
 				texture::Texture::new(Path::new("cobblestone.png"), false, &device, &queue),
 				&device,
 				&texture_bind_group_layout,
 			);
 
-			mesh::Chunk::new(material, &device)
+			chunk::Chunk::new(material, &device)
 		};
 
-		chunk.add_block(Vector3::new(0.0, 0.0, 0.0), &device);
+		for i in -127..128 {
+			chunk.add_block(Vector3::new(0, i, 0), &queue);
+		}
 
 		let depth_texture = texture::Texture::create_depth_texture(&device, &config, "depth texture");
 

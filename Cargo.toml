@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-winit = "0.26"
+winit = "0.26.1" # wgpu uses an outdated version of the raw-window-handle crate, while winit uses the latest one
 env_logger = "0.9"
 log = "0.4"
 wgpu = "0.13.1"
@@ -16,6 +16,7 @@ bytemuck = { "version" = "1.9.1", "features" = [ "derive" ] }
 image = "0.24.2"
 anyhow = "1.0.58"
 instant = "0.1.12"
+ndarray = "0.15.6"
 
 [build-dependencies]
 anyhow = "1.0"
