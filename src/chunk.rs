@@ -1,6 +1,8 @@
+use std::ops::Deref;
 use cgmath::{Vector2, Vector3};
 use ndarray::Array3;
 use wgpu::util::{DeviceExt};
+use crate::block;
 use crate::material::Material;
 
 /*
@@ -56,44 +58,6 @@ pub const CUBE_VERTS: [Vector3<f32>; 24] = [
 	Vector3::new(0.5, 0.5, 0.5),
 ];
 
-pub const CUBE_TEX_COORDS: [Vector2<f32>; 24] = [
-	// Front Face
-	Vector2::new(0.0, 1.0),
-	Vector2::new(1.0, 1.0),
-	Vector2::new(1.0, 0.0),
-	Vector2::new(0.0, 0.0),
-
-	// Back Face
-	Vector2::new(1.0, 1.0),
-	Vector2::new(0.0, 1.0),
-	Vector2::new(0.0, 0.0),
-	Vector2::new(1.0, 0.0),
-
-	// Top Face
-	Vector2::new(0.0, 1.0),
-	Vector2::new(1.0, 1.0),
-	Vector2::new(1.0, 0.0),
-	Vector2::new(0.0, 0.0),
-
-	// Bottom Face
-	Vector2::new(1.0, 1.0),
-	Vector2::new(0.0, 1.0),
-	Vector2::new(0.0, 0.0),
-	Vector2::new(1.0, 0.0),
-
-	// Left Face
-	Vector2::new(0.0, 1.0),
-	Vector2::new(1.0, 1.0),
-	Vector2::new(1.0, 0.0),
-	Vector2::new(0.0, 0.0),
-
-	// Right Face
-	Vector2::new(1.0, 1.0),
-	Vector2::new(0.0, 1.0),
-	Vector2::new(0.0, 0.0),
-	Vector2::new(1.0, 0.0),
-];
-
 pub const CUBE_INDICES: [u32; 36] = [
 	// Front Face
 	0, 1, 2,
@@ -146,6 +110,9 @@ impl Vertex for ChunkVertex {
 	}
 }
 
+pub const ATLAS_SIZE: usize = 256;
+pub const TEXTURE_SIZE: usize = 16;
+
 pub struct ChunkMesh {
 	vertex_buffer: wgpu::Buffer,
 	index_buffer: wgpu::Buffer,
@@ -175,20 +142,34 @@ impl ChunkMesh {
 		}
 	}
 
-	pub fn add_block(&self, position: Vector3<i32>, queue: &wgpu::Queue) {
+	pub fn add_block(&self, position: Vector3<i32>, block: &block::Block, queue: &wgpu::Queue) {
+		// CHUNK_HEIGHT >> 1 is added to the y position to allow for y values of -127 to 128
+		let flattened = (position.x + CHUNK_WIDTH as i32 * (position.y + (CHUNK_HEIGHT >> 1) as i32 + CHUNK_DEPTH as i32 * position.z)) as u64;
+
+		if let block::Block::Air(_) = block {
+			queue.write_buffer(
+				&self.vertex_buffer,
+				flattened * std::mem::size_of::<ChunkVertex>() as u64 * 24,
+				bytemuck::cast_slice(&[0 as u32; std::mem::size_of::<ChunkVertex>() * 24]),
+			);
+
+			queue.write_buffer(
+				&self.index_buffer,
+				flattened * 36 * 4, // each index is 4 bytes, and there are 36 indicies per cube
+				bytemuck::cast_slice(&[0 as u32; 36]),
+			);
+		}
+
 		let vertices = {
 			let position = Vector3::new(position.x as f32, position.y as f32, position.z as f32);
 
-			CUBE_VERTS.iter().zip(CUBE_TEX_COORDS.iter()).map(|(p, t)| {
+			CUBE_VERTS.iter().zip(block.deref().texture_coordinates().to_vec().iter()).map(|(p, t)| {
 				ChunkVertex {
 					position: *p + position,
 					tex_coord: *t,
 				}
 			}).collect::<Vec<_>>()
 		};
-
-		// CHUNK_HEIGHT >> 1 is added to the y position to allow for y values of -127 to 128
-		let flattened = (position.x + CHUNK_WIDTH as i32 * (position.y + (CHUNK_HEIGHT >> 1) as i32 + CHUNK_DEPTH as i32 * position.z)) as u64;
 
 		queue.write_buffer(
 			&self.vertex_buffer,
@@ -211,13 +192,13 @@ const CHUNK_DEPTH: usize = CHUNK_DIMS.2;
 const CHUNK_SIZE: usize = CHUNK_WIDTH * CHUNK_HEIGHT * CHUNK_DEPTH;
 
 pub struct Chunk {
-	pub blocks: Array3<bool>,
+	pub blocks: Array3<block::Block>,
 	pub mesh: ChunkMesh,
 }
 
 impl Chunk {
 	pub fn new(material: Material, device: &wgpu::Device) -> Self {
-		let blocks = Array3::from_elem(CHUNK_DIMS, false);
+		let blocks = Array3::<block::Block>::from_shape_fn(CHUNK_DIMS, |_| block::Block::air());
 
 		let mesh = ChunkMesh::new(material, &device);
 
@@ -227,10 +208,10 @@ impl Chunk {
 		}
 	}
 
-	pub fn add_block(&mut self, position: Vector3<i32>, queue: &wgpu::Queue) {
-		self.blocks[[position.x as usize, (position.y + (CHUNK_HEIGHT >> 1) as i32) as usize, position.z as usize]] = true;
+	pub fn add_block(&mut self, position: Vector3<i32>, block: block::Block, queue: &wgpu::Queue) {
+		self.mesh.add_block(Vector3::new(position.x, position.y, position.z), &block, queue);
 
-		self.mesh.add_block(Vector3::new(position.x, position.y, position.z), queue);
+		self.blocks[[position.x as usize, (position.y + (CHUNK_HEIGHT >> 1) as i32) as usize, position.z as usize]] = block;
 	}
 }
 
