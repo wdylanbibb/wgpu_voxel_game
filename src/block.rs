@@ -1,7 +1,7 @@
 use crate::chunk;
 use cgmath::{ElementWise, Vector2};
-use std::ops::{Div, Mul, Deref, DerefMut};
 use paste::paste;
+use std::ops::{Deref, DerefMut, Div, Mul};
 
 macro_rules! init_blocks {
 	($vis:vis enum $enum_name:ident {
