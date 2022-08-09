@@ -203,7 +203,7 @@ impl State {
         //     let _ = block::Block::stone();
         // }
 
-        chunk.add_block(Vector3::zero(), block::Block::grass(), &queue);
+        chunk.set_block(Vector3::zero(), block::Block::grass(), &queue);
 
         let depth_texture =
             texture::Texture::create_depth_texture(&device, &config, "depth texture");

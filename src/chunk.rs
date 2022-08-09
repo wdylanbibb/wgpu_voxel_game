@@ -191,7 +191,7 @@ impl Chunk {
         Self { blocks, mesh }
     }
 
-    pub fn add_block(&mut self, position: Vector3<i32>, block: block::Block, queue: &wgpu::Queue) {
+    pub fn set_block(&mut self, position: Vector3<i32>, block: block::Block, queue: &wgpu::Queue) {
         self.mesh.add_block(
             Vector3::new(position.x, position.y, position.z),
             &block,
