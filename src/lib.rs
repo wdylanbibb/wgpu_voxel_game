@@ -7,21 +7,6 @@ mod material;
 mod texture;
 mod trait_enum;
 
-use bytemuck::{Pod, Zeroable};
-use cgmath::{Matrix4, SquareMatrix, Vector3, Vector4, Zero};
-use std::iter;
-use std::path::Path;
-use wgpu::util::DeviceExt;
-use wgpu::VertexBufferLayout;
-
-use crate::chunk::{DrawChunk, Vertex};
-use winit::{
-    dpi::PhysicalSize,
-    event::*,
-    event_loop::{ControlFlow, EventLoop},
-    window::{Window, WindowBuilder},
-};
-
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 struct CameraUniform {
@@ -52,6 +37,9 @@ struct State {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: PhysicalSize<u32>,
+    imgui: imgui::Context,
+    platform: imgui_winit_support::WinitPlatform,
+    renderer: Renderer,
     camera: camera::Camera,
     projection: camera::Projection,
     camera_controller: camera::CameraController,
@@ -61,6 +49,7 @@ struct State {
     render_pipeline: wgpu::RenderPipeline,
     chunk: chunk::Chunk,
     depth_texture: texture::Texture,
+    last_cursor: Option<MouseCursor>,
     mouse_pressed: bool,
 }
 
@@ -102,6 +91,36 @@ impl State {
             present_mode: wgpu::PresentMode::Fifo,
         };
         surface.configure(&device, &config);
+
+        let hidpi_factor = window.scale_factor();
+
+        let mut imgui = imgui::Context::create();
+        let mut platform = imgui_winit_support::WinitPlatform::init(&mut imgui);
+        platform.attach_window(
+            imgui.io_mut(),
+            window,
+            imgui_winit_support::HiDpiMode::Default,
+        );
+        imgui.set_ini_filename(None);
+
+        let font_size = (13.0 * hidpi_factor) as f32;
+        imgui.io_mut().font_global_scale = (1.0 / hidpi_factor) as f32;
+
+        imgui.fonts().add_font(&[FontSource::DefaultFontData {
+            config: Some(imgui::FontConfig {
+                oversample_h: 1,
+                pixel_snap_h: true,
+                size_pixels: font_size,
+                ..Default::default()
+            })
+        }]);
+
+        let renderer_config = RendererConfig {
+            texture_format: config.format,
+            ..Default::default()
+        };
+
+        let mut renderer = Renderer::new(&mut imgui, &device, &queue, renderer_config);
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -215,6 +234,9 @@ impl State {
             queue,
             config,
             size,
+            imgui,
+            platform,
+            renderer,
             camera,
             projection,
             camera_controller,
@@ -224,6 +246,7 @@ impl State {
             render_pipeline,
             chunk,
             depth_texture,
+            last_cursor: None,
             mouse_pressed: false,
         }
     }
@@ -272,7 +295,7 @@ impl State {
         }
     }
 
-    fn update(&mut self, dt: instant::Duration) {
+    fn update(&mut self, dt: f32) {
         self.camera_controller.update_camera(&mut self.camera, dt);
         self.camera_uniform
             .update_view_proj(&self.camera, &self.projection);
@@ -281,24 +304,13 @@ impl State {
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
-
-        // for instance in &mut self.instances {
-        // 	let amount = cgmath::Quaternion::from_angle_y(cgmath::Deg(ROTATION_SPEED * dt.as_secs_f32()));
-        // 	let current = instance.rotation;
-        // 	instance.rotation = amount * current;
-        // }
-        // let instance_data = self.instances
-        // 	.iter()
-        // 	.map(Instance::to_raw)
-        // 	.collect::<Vec<_>>();
-        // self.queue.write_buffer(
-        // 	&self.instance_buffer,
-        // 	0,
-        // 	bytemuck::cast_slice(&instance_data),
-        // );
     }
 
-    fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+    fn render(&mut self, window: &Window) -> Result<(), wgpu::SurfaceError> {
+        self.platform
+            .prepare_frame(self.imgui.io_mut(), window)
+            .expect("Failed to prepare frame");
+
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -341,6 +353,47 @@ impl State {
         }
 
         self.queue.submit(iter::once(encoder.finish()));
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
+
+        let ui = self.imgui.frame();
+
+        if self.last_cursor != ui.mouse_cursor() {
+            self.last_cursor = ui.mouse_cursor();
+            self.platform.prepare_render(&ui, window);
+        }
+
+        imgui::Window::new("Voxel Game")
+            .size(Vector2::zero().into(), Condition::FirstUseEver)
+            .build(&ui, || {
+                ui.text(format!("Frametime: {:?}", ui.io().delta_time));
+            });
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None,
+            });
+
+            self.renderer
+                .render(ui.render(), &self.queue, &self.device, &mut render_pass)
+                .expect("Rendering failed");
+        }
+
+        self.queue.submit(iter::once(encoder.finish()));
+
         output.present();
 
         Ok(())
@@ -368,23 +421,25 @@ fn create_render_pipeline(
         fragment: Some(wgpu::FragmentState {
             module: &shader,
             entry_point: "fs_main",
-            targets: &[Some(wgpu::ColorTargetState {
-                format: color_format,
-                blend: Some(wgpu::BlendState {
-                    alpha: wgpu::BlendComponent::REPLACE,
-                    color: wgpu::BlendComponent::REPLACE,
-                }),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
+            // targets: &[Some(wgpu::ColorTargetState {
+            //     format: color_format,
+            //     blend: Some(wgpu::BlendState {
+            //         alpha: wgpu::BlendComponent::REPLACE,
+            //         color: wgpu::BlendComponent::REPLACE,
+            //     }),
+            //     write_mask: wgpu::ColorWrites::ALL,
+            // })],
+            targets: &[Some(color_format.into())],
         }),
         primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            strip_index_format: None,
-            front_face: wgpu::FrontFace::Ccw,
-            cull_mode: Some(wgpu::Face::Back),
-            polygon_mode: wgpu::PolygonMode::Fill,
-            unclipped_depth: false,
-            conservative: false,
+            // topology: wgpu::PrimitiveTopology::TriangleList,
+            // strip_index_format: None,
+            // front_face: wgpu::FrontFace::Ccw,
+            // cull_mode: Some(wgpu::Face::Back),
+            // polygon_mode: wgpu::PolygonMode::Fill,
+            // unclipped_depth: false,
+            // conservative: false,
+            ..Default::default()
         },
         depth_stencil: depth_format.map(|format| wgpu::DepthStencilState {
             format,
@@ -393,11 +448,12 @@ fn create_render_pipeline(
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
-        multisample: wgpu::MultisampleState {
-            count: 1,
-            mask: !0,
-            alpha_to_coverage_enabled: false,
-        },
+        // multisample: wgpu::MultisampleState {
+        //     count: 1,
+        //     mask: !0,
+        //     alpha_to_coverage_enabled: false,
+        // },
+        multisample: wgpu::MultisampleState::default(),
         multiview: None,
     })
 }
@@ -414,6 +470,7 @@ pub async fn run() {
 
     // State::new uses async code, so we're going to wait for it to finish
     let mut state = State::new(&window).await;
+
     let mut last_render_time = instant::Instant::now();
 
     event_loop.run(move |event, _, control_flow| {
@@ -452,8 +509,11 @@ pub async fn run() {
                 let now = instant::Instant::now();
                 let dt = now - last_render_time;
                 last_render_time = now;
-                state.update(dt);
-                match state.render() {
+
+                state.imgui.io_mut().update_delta_time(dt);
+
+                state.update(dt.as_secs_f32());
+                match state.render(&window) {
                     Ok(_) => {}
                     // Reconfigure the surface if lost
                     Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
@@ -469,5 +529,7 @@ pub async fn run() {
             }
             _ => {}
         }
+
+        state.platform.handle_event(state.imgui.io_mut(), &window, &event);
     });
 }

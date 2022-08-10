@@ -1,13 +1,14 @@
+use std::f32::consts::FRAC_PI_2;
+
 use cgmath::*;
 use instant::Duration;
-use std::f32::consts::FRAC_PI_2;
 use winit::dpi::PhysicalPosition;
 use winit::event::*;
 
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: Matrix4<f32> = Matrix4::new(
-	1.0, 0.0, 0.0, 0.0,
-	0.0, 1.0, 0.0, 0.0,
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
 	0.0, 0.0, 0.5, 0.0,
 	0.0, 0.0, 0.5, 1.0,
 );
@@ -149,8 +150,8 @@ impl CameraController {
         };
     }
 
-    pub fn update_camera(&mut self, camera: &mut Camera, dt: Duration) {
-        let dt = dt.as_secs_f32();
+    pub fn update_camera(&mut self, camera: &mut Camera, dt: f32) {
+        // let dt = dt.as_secs_f32();
 
         // Move forward/backward and left/right
         let (yaw_sin, yaw_cos) = camera.yaw.0.sin_cos();
