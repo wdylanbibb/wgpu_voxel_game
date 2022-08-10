@@ -1,116 +1,6 @@
-use crate::chunk;
+use crate::{chunk, trait_enum};
 use cgmath::{ElementWise, Vector2};
-use paste::paste;
 use std::ops::{Deref, DerefMut, Div, Mul};
-
-macro_rules! init_blocks {
-    // Creates the struct given a block of enum attributes,
-    // a block of struct attributes, and struct name
-    (
-        @expand_meta
-        ($(#[$enum_attr:meta])*)
-        ($(#[$meta:meta])*)
-        $vis:vis struct $name:ident;
-        impl $trait:ident $impl:tt
-    ) => {
-        $(#[$enum_attr])*
-        $(#[$meta])*
-        $vis struct $name;
-        impl $trait for $name $impl
-
-    };
-
-    // Builds a struct with attributes given to the enum and
-    // the struct itself
-    // (Passes attributes as tt to avoid nested repetition)
-    (
-        @build_struct
-        $enum_attr:tt
-        $(
-            $meta:tt
-            $vis:vis struct $name:ident;
-            impl $trait:ident $impl:tt
-        )*
-    ) => {
-        $(
-            init_blocks! (
-                @expand_meta
-                $enum_attr
-                $meta
-                $vis struct $name;
-                impl $trait $impl
-            );
-        )*
-    };
-
-    // Creates an enum containing structs that all have a certain
-    // trait in common.
-    (
-        $(#[$enum_attr:meta])*
-        $vis:vis enum $enum_name:ident: $trait:ident {
-            $(
-                $(#[$struct_attr:meta])*
-                $name:ident: $impl:tt,
-            )*
-        }
-    )=>{
-        init_blocks! (
-            @build_struct
-            ($(#[$enum_attr])*)
-            $(
-                ($(#[$struct_attr])*)
-                $vis struct $name;
-                impl $trait $impl
-            )*
-        );
-
-        $(#[$enum_attr])*
-        $vis enum $enum_name {
-            $(
-                $name($name),
-            )*
-        }
-
-        paste! {
-            impl $enum_name {
-                $(
-                    $vis fn [<$name:lower>]() -> Self {
-                        $enum_name::$name($name)
-                    }
-
-                    $vis fn [<as_ $name:lower>](self) -> Option<$name> {
-                        match self {
-                            $enum_name::$name(v) => Some(v),
-                            _ => None,
-                        }
-                    }
-                )*
-            }
-        }
-
-        impl Deref for $enum_name {
-            type Target = dyn $trait;
-
-            fn deref(&self) -> &Self::Target {
-                match self {
-                    $(
-                        $enum_name::$name(v) => v,
-                    )*
-                }
-            }
-        }
-
-        impl DerefMut for $enum_name {
-            fn deref_mut(&mut self) -> &mut Self::Target {
-                match self {
-                    $(
-                        $enum_name::$name(v) => v,
-                    )*
-                }
-            }
-        }
-    };
-}
 
 pub struct TexCoordConfig {
     pub front: Vector2<f32>,
@@ -216,7 +106,7 @@ pub trait BlockData {
     fn texture_coordinates(&self) -> TexCoordConfig;
 }
 
-init_blocks! {
+trait_enum! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum Block: BlockData {
         Air: {
@@ -228,18 +118,6 @@ init_blocks! {
             fn texture_coordinates(&self) -> TexCoordConfig {
                 TexCoordConfig::top_bottom_sides(Vector2::new(0.0, 0.0), Vector2::new(32.0, 0.0), Vector2::new(16.0, 0.0))
             }
-        },
-        #[allow(dead_code)]
-        Dirt: {
-            fn texture_coordinates(&self) -> TexCoordConfig {
-                TexCoordConfig::all_same(Vector2::new(32.0, 0.0))
-            }
-        },
-        #[allow(dead_code)]
-        Stone: {
-            fn texture_coordinates(&self) -> TexCoordConfig {
-                TexCoordConfig::all_same(Vector2::new(48.0, 0.0))
-            }
-        },
+        }
     }
 }

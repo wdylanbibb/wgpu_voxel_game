@@ -5,6 +5,7 @@ mod camera;
 mod chunk;
 mod material;
 mod texture;
+mod trait_enum;
 
 use bytemuck::{Pod, Zeroable};
 use cgmath::{Matrix4, SquareMatrix, Vector3, Vector4, Zero};
