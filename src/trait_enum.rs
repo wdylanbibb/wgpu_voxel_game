@@ -84,6 +84,8 @@ macro_rules! trait_enum {
                 )*
             }
         }
+
+
     };
 
     // Creates an enum containing structs that all have a certain
@@ -129,69 +131,4 @@ macro_rules! trait_enum {
             }
         }
     };
-}
-
-#[cfg(test)]
-mod tests {
-    use paste::paste;
-
-    trait Animal {
-        fn make_sound(&self) -> &str;
-    }
-
-    #[test]
-    fn default_behavior() {
-        trait_enum! (
-            #[derive(Debug)]
-            enum Animals {
-                Dog = Animal {
-                    fn make_sound(&self) -> &str {
-                        "woof"
-                    }
-                },
-                Cat = Animal {
-                    fn make_sound(&self) -> &str {
-                        "meow"
-                    }
-                },
-            }
-        );
-
-        let dog: Animals = Animals::dog();
-
-        if let Some(dog) = dog.as_dog() {
-            assert_eq!(dog.make_sound(), "woof");
-        } else {
-            panic!("Expected Dog");
-        }
-    }
-
-    #[test]
-    fn deref() {
-        use std::ops::{Deref, DerefMut};
-
-        trait_enum! (
-            #[derive(Debug)]
-            enum Animals: Animal {
-                /// A dog
-                Dog: {
-                    fn make_sound(&self) -> &str {
-                        "woof"
-                    }
-                },
-                /// A cat
-                Cat: {
-                    fn make_sound(&self) -> &str {
-                        "meow"
-                    }
-                },
-            }
-        );
-
-        let dog: Animals = Animals::dog();
-
-        let deref: &dyn Animal = dog.deref();
-
-        assert_eq!(deref.make_sound(), "woof");
-    }
 }
