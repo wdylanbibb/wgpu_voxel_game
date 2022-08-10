@@ -1,5 +1,23 @@
 extern crate core;
 
+use std::iter;
+use std::path::Path;
+
+use bytemuck::{Pod, Zeroable};
+use cgmath::{Matrix4, SquareMatrix, Vector2, Vector3, Vector4, Zero};
+use imgui::{Condition, FontSource, MouseCursor};
+use imgui_wgpu::{Renderer, RendererConfig};
+use wgpu::util::DeviceExt;
+use wgpu::VertexBufferLayout;
+use winit::{
+    dpi::PhysicalSize,
+    event::*,
+    event_loop::{ControlFlow, EventLoop},
+    window::{Window, WindowBuilder},
+};
+
+use crate::chunk::{DrawChunk, Vertex};
+
 mod block;
 mod camera;
 mod chunk;
@@ -216,14 +234,13 @@ impl State {
             chunk::Chunk::new(material, &device)
         };
 
-        // {
-        //     let _ = block::Block::air();
-        //     let _ = block::Block::grass();
-        //     let _ = block::Block::dirt();
-        //     let _ = block::Block::stone();
-        // }
+        for x in 0..10 {
+            for z in 0..10 {
+                chunk.set_block(Vector3::new(x, 0, z), block::Block::grass(), &queue);
+            }
+        }
 
-        chunk.set_block(Vector3::zero(), block::Block::grass(), &queue);
+        chunk.set_block(Vector3::new(5, 1, 5), block::Block::stone(), &queue);
 
         let depth_texture =
             texture::Texture::create_depth_texture(&device, &config, "depth texture");

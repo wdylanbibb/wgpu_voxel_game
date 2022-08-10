@@ -46,7 +46,9 @@ macro_rules! trait_enum {
         $vis:vis enum $enum_name:ident {
             $(
                 $(#[$struct_attr:meta])*
-                $name:ident = $trait:ident $impl:tt
+                $name:ident = $trait:ident {
+                    $($impl:item)*
+                }
             ),* $(,)?
         }
     ) => {
@@ -56,7 +58,9 @@ macro_rules! trait_enum {
             $(
                 ($(#[$struct_attr])*)
                 $vis struct $name;
-                impl $trait $impl
+                impl $trait {
+                    $($impl)*
+                }
             )*
         );
 
@@ -95,7 +99,9 @@ macro_rules! trait_enum {
         $vis:vis enum $enum_name:ident: $trait:ident {
             $(
                 $(#[$struct_attr:meta])*
-                $name:ident: $impl:tt
+                $name:ident: {
+                    $($impl:item)*
+                }
             ),* $(,)?
         }
     )=>{
@@ -104,7 +110,9 @@ macro_rules! trait_enum {
             $vis enum $enum_name {
                 $(
                     $(#[$struct_attr])*
-                    $name = $trait $impl
+                    $name = $trait {
+                        $($impl)*
+                    }
                 ),*
             }
         );
