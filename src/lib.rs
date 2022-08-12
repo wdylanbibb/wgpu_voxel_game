@@ -141,7 +141,7 @@ impl State {
             ..Default::default()
         };
 
-        let mut renderer = Renderer::new(&mut imgui, &device, &queue, renderer_config);
+        let renderer = Renderer::new(&mut imgui, &device, &queue, renderer_config);
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -239,11 +239,11 @@ impl State {
 
         for x in 0..10 {
             for z in 0..10 {
-                chunk.set_block(Vector3::new(x, 0, z), block::Block::grass(), &queue);
+                chunk.set_block(Vector3::new(x, 0, z), block::Block::Grass(block::Grass), &queue);
             }
         }
 
-        chunk.set_block(Vector3::new(5, 1, 5), block::Block::stone(), &queue);
+        chunk.set_block(Vector3::new(5, 1, 5), block::Block::Stone(block::Stone), &queue);
 
         let depth_texture =
             texture::Texture::create_depth_texture(&device, &config, "depth texture");
@@ -333,10 +333,6 @@ impl State {
     }
 
     fn render(&mut self, window: &Window) -> Result<(), wgpu::SurfaceError> {
-        self.platform
-            .prepare_frame(self.imgui.io_mut(), window)
-            .expect("Failed to prepare frame");
-
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -386,6 +382,10 @@ impl State {
                 label: Some("Render Encoder"),
             });
 
+        self.platform
+            .prepare_frame(self.imgui.io_mut(), window)
+            .expect("Failed to prepare frame");
+
         let ui: imgui::Ui = self.imgui.frame();
 
         self.ui_focus = ui.io().want_capture_mouse;
@@ -404,7 +404,6 @@ impl State {
             .always_auto_resize(true)
             .build(&ui, || {
                 ui.text(format!("FPS: {:?}", self.fps_counter.last_second_frames.len()));
-                ui.text("Stuff");
             });
 
         {

@@ -184,7 +184,7 @@ pub struct Chunk {
 
 impl Chunk {
     pub fn new(material: Material, device: &wgpu::Device) -> Self {
-        let blocks = Array3::<block::Block>::from_shape_fn(CHUNK_DIMS, |_| block::Block::air());
+        let blocks = Array3::<block::Block>::from_shape_fn(CHUNK_DIMS, |_| block::Block::Air(block::Air));
 
         let mesh = ChunkMesh::new(material, &device);
 

@@ -1,5 +1,3 @@
-use paste::paste;
-
 #[macro_export]
 macro_rules! trait_enum {
     // Creates the struct given a block of enum attributes,
@@ -41,6 +39,7 @@ macro_rules! trait_enum {
         )*
     };
 
+    // Creates an enum containing traits that all implement a given trait.
     (
         $(#[$enum_attr:meta])*
         $vis:vis enum $enum_name:ident {
@@ -71,23 +70,22 @@ macro_rules! trait_enum {
                 $name($name),
             )*
         }
-
-        paste::paste! {
-            impl $enum_name {
-                $(
-                    $vis fn [<$name:lower>]() -> Self {
-                        $enum_name::$name($name)
-                    }
-
-                    $vis fn [<as_ $name:lower>](&self) -> Option<&$name> {
-                        match self {
-                            $enum_name::$name(v) => Some(&v),
-                            _ => None,
-                        }
-                    }
-                )*
-            }
-        }
+        // paste::paste! {
+        //     impl $enum_name {
+        //         $(
+        //             $vis fn [<$name:lower>]() -> Self {
+        //                 $enum_name::$name($name)
+        //             }
+        //
+        //             $vis fn [<as_ $name:lower>](&self) -> Option<&$name> {
+        //                 match self {
+        //                     $enum_name::$name(v) => Some(&v),
+        //                     _ => None,
+        //                 }
+        //             }
+        //         )*
+        //     }
+        // }
 
 
     };
@@ -105,6 +103,10 @@ macro_rules! trait_enum {
             ),* $(,)?
         }
     )=>{
+        pub trait WithAny: $trait {
+            fn as_any(&self) -> &dyn std::any::Any;
+        }
+
         trait_enum! (
             $(#[$enum_attr])*
             $vis enum $enum_name {
@@ -117,8 +119,24 @@ macro_rules! trait_enum {
             }
         );
 
-        impl Deref for $enum_name {
-            type Target = dyn $trait;
+        $(
+            impl WithAny for $name {
+                fn as_any(&self) -> &dyn std::any::Any {
+                    self
+                }
+            }
+        )*
+
+        impl $enum_name {
+            $vis fn get_inner<T>(&self) -> Option<&T>
+                where T: WithAny + 'static
+            {
+                self.deref().as_any().downcast_ref::<T>()
+            }
+        }
+
+        impl std::ops::Deref for $enum_name {
+            type Target = dyn WithAny;
 
             fn deref(&self) -> &Self::Target {
                 match self {
@@ -129,7 +147,7 @@ macro_rules! trait_enum {
             }
         }
 
-        impl DerefMut for $enum_name {
+        impl std::ops::DerefMut for $enum_name {
             fn deref_mut(&mut self) -> &mut Self::Target {
                 match self {
                     $(
