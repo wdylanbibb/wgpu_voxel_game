@@ -236,11 +236,11 @@ impl State {
 
         for x in 0..10 {
             for z in 0..10 {
-                chunk.set_block(Vector3::new(x, 0, z), block::Block::grass(), &queue);
+                chunk.set_block(Vector3::new(x, 0, z), block::Block::Grass(block::Grass), &queue);
             }
         }
 
-        chunk.set_block(Vector3::new(5, 1, 5), block::Block::stone(), &queue);
+        chunk.set_block(Vector3::new(5, 1, 5), block::Block::Stone(block::Stone), &queue);
 
         let depth_texture =
             texture::Texture::create_depth_texture(&device, &config, "depth texture");
