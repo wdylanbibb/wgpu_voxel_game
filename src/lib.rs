@@ -24,6 +24,7 @@ mod chunk;
 mod material;
 mod texture;
 mod trait_enum;
+mod renderer;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -67,8 +68,10 @@ struct State {
     render_pipeline: wgpu::RenderPipeline,
     chunk: chunk::Chunk,
     depth_texture: texture::Texture,
+    fps_counter: renderer::FPSCounter,
     last_cursor: Option<MouseCursor>,
     mouse_pressed: bool,
+    ui_focus: bool,
 }
 
 impl State {
@@ -245,6 +248,8 @@ impl State {
         let depth_texture =
             texture::Texture::create_depth_texture(&device, &config, "depth texture");
 
+        let fps_counter = renderer::FPSCounter::new();
+
         Self {
             surface,
             device,
@@ -263,8 +268,10 @@ impl State {
             render_pipeline,
             chunk,
             depth_texture,
+            fps_counter,
             last_cursor: None,
             mouse_pressed: false,
+            ui_focus: false,
         }
     }
 
@@ -321,6 +328,8 @@ impl State {
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
+
+        self.fps_counter.tick();
     }
 
     fn render(&mut self, window: &Window) -> Result<(), wgpu::SurfaceError> {
@@ -377,17 +386,25 @@ impl State {
             .prepare_frame(self.imgui.io_mut(), window)
             .expect("Failed to prepare frame");
 
-        let ui = self.imgui.frame();
+        let ui: imgui::Ui = self.imgui.frame();
+
+        self.ui_focus = ui.io().want_capture_mouse;
 
         if self.last_cursor != ui.mouse_cursor() {
             self.last_cursor = ui.mouse_cursor();
             self.platform.prepare_render(&ui, window);
         }
 
-        imgui::Window::new("Voxel Game")
+        imgui::Window::new("Game Info")
             .size(Vector2::zero().into(), Condition::FirstUseEver)
+            .position(Vector2::new(0.0, 0.0).into(), Condition::FirstUseEver)
+            .resizable(false)
+            .movable(false)
+            .title_bar(false)
+            .always_auto_resize(true)
             .build(&ui, || {
-                ui.text(format!("Frametime: {:?}", ui.io().delta_time));
+                ui.text(format!("FPS: {:?}", self.fps_counter.last_second_frames.len()));
+                ui.text("Stuff");
             });
 
         {
@@ -518,7 +535,7 @@ pub async fn run() {
                 event: DeviceEvent::MouseMotion { delta },
                 ..
             } => {
-                if state.mouse_pressed {
+                if state.mouse_pressed && !state.ui_focus {
                     state.camera_controller.process_mouse(delta.0, delta.1)
                 }
             }
