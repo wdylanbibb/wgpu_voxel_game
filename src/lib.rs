@@ -404,7 +404,6 @@ impl State {
             .always_auto_resize(true)
             .build(&ui, || {
                 ui.text(format!("FPS: {:?}", self.fps_counter.last_second_frames.len()));
-                ui.text("Stuff");
             });
 
         {
