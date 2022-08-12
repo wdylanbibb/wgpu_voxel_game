@@ -138,7 +138,7 @@ impl State {
             ..Default::default()
         };
 
-        let mut renderer = Renderer::new(&mut imgui, &device, &queue, renderer_config);
+        let renderer = Renderer::new(&mut imgui, &device, &queue, renderer_config);
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -324,10 +324,6 @@ impl State {
     }
 
     fn render(&mut self, window: &Window) -> Result<(), wgpu::SurfaceError> {
-        self.platform
-            .prepare_frame(self.imgui.io_mut(), window)
-            .expect("Failed to prepare frame");
-
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -376,6 +372,10 @@ impl State {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
+
+        self.platform
+            .prepare_frame(self.imgui.io_mut(), window)
+            .expect("Failed to prepare frame");
 
         let ui = self.imgui.frame();
 
