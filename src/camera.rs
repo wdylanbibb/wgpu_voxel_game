@@ -1,7 +1,6 @@
 use std::f32::consts::FRAC_PI_2;
 
 use cgmath::*;
-use instant::Duration;
 use winit::dpi::PhysicalPosition;
 use winit::event::*;
 
