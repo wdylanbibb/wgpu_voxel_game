@@ -1,6 +1,7 @@
 use anyhow::*;
 use image::GenericImageView;
 use std::path::Path;
+use crate::resources::get_bytes;
 
 pub struct Texture {
     pub texture: wgpu::Texture,
@@ -17,8 +18,9 @@ impl Texture {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Self {
-        let path = Path::new(env!("OUT_DIR")).join("res").join(file_path);
-        let data = std::fs::read(path).unwrap();
+        // let path = Path::new(env!("OUT_DIR")).join("res").join(file_path);
+        // let data = std::fs::read(path).unwrap();
+        let data = get_bytes(file_path).expect("Unable to load path for texture");
 
         Self::from_bytes(
             &data,

@@ -16,6 +16,7 @@ use winit::{
 };
 
 use crate::chunk::{DrawChunk, Vertex};
+use crate::resources::get_bytes;
 
 mod block;
 mod camera;
@@ -24,6 +25,7 @@ mod material;
 mod texture;
 mod trait_enum;
 mod renderer;
+mod resources;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
