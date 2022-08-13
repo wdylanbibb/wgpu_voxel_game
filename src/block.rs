@@ -4,6 +4,7 @@ use cgmath::{ElementWise, Vector2};
 
 use crate::{chunk, trait_enum};
 
+#[derive(Debug)]
 pub struct TexCoordConfig {
     pub front: Vector2<f32>,
     pub back: Vector2<f32>,

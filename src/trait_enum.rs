@@ -127,6 +127,7 @@ macro_rules! trait_enum {
             }
         )*
 
+        #[allow(dead_code)]
         impl $enum_name {
             $vis fn get_inner<T>(&self) -> Option<&T>
                 where T: WithAny + 'static

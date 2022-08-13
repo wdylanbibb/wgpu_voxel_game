@@ -1,6 +1,6 @@
 use crate::block;
 use crate::material::Material;
-use cgmath::{Vector2, Vector3};
+use cgmath::{ElementWise, Vector2, Vector3};
 use ndarray::Array3;
 use std::ops::Deref;
 use wgpu::util::DeviceExt;
@@ -13,54 +13,109 @@ use wgpu::util::DeviceExt;
             |------|------------|      |
             |      |            |      |
             |      |            |      |
-            |      |------------|------| (1, -1,- 1)
+            |      |------------|------| (1, -1, -1)
             |     /(-1, -1, -1) |     /
             |   /               |   /
             | /                 | /
 (-1, -1, 1) |-------------------| (1, -1, 1)
    */
 
-pub const CUBE_VERTS: [Vector3<f32>; 24] = [
-    // Front Face
-    Vector3::new(-0.5, -0.5, 0.5),
-    Vector3::new(0.5, -0.5, 0.5),
-    Vector3::new(0.5, 0.5, 0.5),
-    Vector3::new(-0.5, 0.5, 0.5),
-    // Back Face
-    Vector3::new(0.5, -0.5, -0.5),
-    Vector3::new(-0.5, -0.5, -0.5),
-    Vector3::new(-0.5, 0.5, -0.5),
-    Vector3::new(0.5, 0.5, -0.5),
-    // Top Face
-    Vector3::new(-0.5, 0.5, 0.5),
-    Vector3::new(0.5, 0.5, 0.5),
-    Vector3::new(0.5, 0.5, -0.5),
-    Vector3::new(-0.5, 0.5, -0.5),
-    // Bottom Face
-    Vector3::new(-0.5, -0.5, -0.5),
-    Vector3::new(0.5, -0.5, -0.5),
-    Vector3::new(0.5, -0.5, 0.5),
-    Vector3::new(-0.5, -0.5, 0.5),
-    // Left Face
-    Vector3::new(-0.5, -0.5, -0.5),
-    Vector3::new(-0.5, -0.5, 0.5),
-    Vector3::new(-0.5, 0.5, 0.5),
-    Vector3::new(-0.5, 0.5, -0.5),
-    // Right Face
-    Vector3::new(0.5, -0.5, 0.5),
-    Vector3::new(0.5, -0.5, -0.5),
-    Vector3::new(0.5, 0.5, -0.5),
-    Vector3::new(0.5, 0.5, 0.5),
-];
+#[derive(Debug)]
+pub enum Direction {
+    FRONT, // 0, 0, 1
+    BACK, // 0, 0, -1
+    TOP, // 0, 1, 0
+    BOTTOM, // 0, -1, 0
+    LEFT, // -1, 0, 0
+    RIGHT, // 1, 0, 0
+}
 
-pub const CUBE_INDICES: [u32; 36] = [
-    0, 1, 2, 2, 3, 0, // Front Face
-    4, 5, 6, 6, 7, 4, // Back Face
-    8, 9, 10, 10, 11, 8, // Top Face
-    12, 13, 14, 14, 15, 12, // Bottom Face
-    16, 17, 18, 18, 19, 16, // Left Face
-    20, 21, 22, 22, 23, 20, // Right Face
-];
+impl Direction {
+    fn cube_verts(&self) -> [Vector3<f32>; 4] {
+        match self {
+            Direction::FRONT => [
+                Vector3::new(-0.5, -0.5, 0.5),
+                Vector3::new(0.5, -0.5, 0.5),
+                Vector3::new(0.5, 0.5, 0.5),
+                Vector3::new(-0.5, 0.5, 0.5),
+            ],
+            Direction::BACK => [
+                Vector3::new(0.5, -0.5, -0.5),
+                Vector3::new(-0.5, -0.5, -0.5),
+                Vector3::new(-0.5, 0.5, -0.5),
+                Vector3::new(0.5, 0.5, -0.5),
+            ],
+            Direction::TOP => [
+                Vector3::new(-0.5, 0.5, 0.5),
+                Vector3::new(0.5, 0.5, 0.5),
+                Vector3::new(0.5, 0.5, -0.5),
+                Vector3::new(-0.5, 0.5, -0.5),
+            ],
+            Direction::BOTTOM => [
+                Vector3::new(-0.5, -0.5, -0.5),
+                Vector3::new(0.5, -0.5, -0.5),
+                Vector3::new(0.5, -0.5, 0.5),
+                Vector3::new(-0.5, -0.5, 0.5),
+            ],
+            Direction::LEFT => [
+                Vector3::new(-0.5, -0.5, -0.5),
+                Vector3::new(-0.5, -0.5, 0.5),
+                Vector3::new(-0.5, 0.5, 0.5),
+                Vector3::new(-0.5, 0.5, -0.5),
+            ],
+            Direction::RIGHT => [
+                Vector3::new(0.5, -0.5, 0.5),
+                Vector3::new(0.5, -0.5, -0.5),
+                Vector3::new(0.5, 0.5, -0.5),
+                Vector3::new(0.5, 0.5, 0.5),
+            ],
+        }
+    }
+
+    fn cube_indices(&self) -> [u32; 6] {
+        match self {
+            Direction::FRONT => [0, 1, 2, 2, 3, 0],
+            Direction::BACK => [4, 5, 6, 6, 7, 4],
+            Direction::TOP => [8, 9, 10, 10, 11, 8],
+            Direction::BOTTOM => [12, 13, 14, 14, 15, 12],
+            Direction::LEFT => [16, 17, 18, 18, 19, 16],
+            Direction::RIGHT => [20, 21, 22, 22, 23, 20],
+        }
+    }
+
+    fn to_vec3(&self) -> Vector3<i32> {
+        match self {
+            Direction::FRONT => Vector3::new(0, 0, 1),
+            Direction::BACK => Vector3::new(0, 0, -1),
+            Direction::TOP => Vector3::new(0, 1, 0),
+            Direction::BOTTOM => Vector3::new(0, -1, 0),
+            Direction::LEFT => Vector3::new(-1, 0, 0),
+            Direction::RIGHT => Vector3::new(1, 0, 0),
+        }
+    }
+
+    fn index(&self) -> u32 {
+        match self {
+            Direction::FRONT => 0,
+            Direction::BACK => 1,
+            Direction::TOP => 2,
+            Direction::BOTTOM => 3,
+            Direction::LEFT => 4,
+            Direction::RIGHT => 5,
+        }
+    }
+
+    fn get_opposite(&self) -> Self {
+        match self {
+            Direction::FRONT => Direction::BACK,
+            Direction::BACK => Direction::FRONT,
+            Direction::TOP => Direction::BOTTOM,
+            Direction::BOTTOM => Direction::TOP,
+            Direction::LEFT => Direction::RIGHT,
+            Direction::RIGHT => Direction::LEFT,
+        }
+    }
+}
 
 pub trait Vertex {
     fn desc<'a>() -> wgpu::VertexBufferLayout<'a>;
@@ -100,7 +155,7 @@ pub struct ChunkMesh {
 }
 
 impl ChunkMesh {
-    pub fn new(material: Material, device: &wgpu::Device) -> Self {
+    fn new(material: Material, device: &wgpu::Device) -> Self {
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
             contents: bytemuck::cast_slice(
@@ -123,50 +178,122 @@ impl ChunkMesh {
         }
     }
 
-    pub fn add_block(&self, position: Vector3<i32>, block: &block::Block, queue: &wgpu::Queue) {
+    fn flatten_3d(v: (i32, i32, i32)) -> u64 {
         // CHUNK_HEIGHT >> 1 is added to the y position to allow for y values of -127 to 128
-        let flattened = (position.x
+        let (x, y, z) = v;
+        (x
             + CHUNK_WIDTH as i32
-                * (position.y + (CHUNK_HEIGHT >> 1) as i32 + CHUNK_DEPTH as i32 * position.z))
-            as u64;
+            * (y + (CHUNK_HEIGHT >> 1) as i32 + CHUNK_DEPTH as i32 * z))
+            as u64
+    }
+
+    fn add_block(&self, chunk: &Chunk, position: Vector3<i32>, block: &block::Block, queue: &wgpu::Queue) {
+        let flattened = ChunkMesh::flatten_3d(position.into());
 
         if let block::Block::Air(_) = block {
             queue.write_buffer(
                 &self.vertex_buffer,
                 flattened * std::mem::size_of::<ChunkVertex>() as u64 * 24,
-                bytemuck::cast_slice(&[0 as u32; std::mem::size_of::<ChunkVertex>() * 24]),
+                bytemuck::cast_slice(&[0 as u8; std::mem::size_of::<ChunkVertex>() * 24]),
             );
 
             queue.write_buffer(
                 &self.index_buffer,
-                flattened * 36 * 4, // each index is 4 bytes, and there are 36 indicies per cube
+                flattened * std::mem::size_of::<u32>() as u64 * 36,
                 bytemuck::cast_slice(&[0 as u32; 36]),
             );
+
+            return;
         }
+
+        for face in [
+            Direction::FRONT,
+            Direction::BACK,
+            Direction::TOP,
+            Direction::BOTTOM,
+            Direction::LEFT,
+            Direction::RIGHT,
+        ] {
+            let v = face.to_vec3().add_element_wise(position);
+
+            let neighbor = chunk.get_block(v);
+            match neighbor {
+                Some(neighbor) => {
+                    if let block::Block::Air(_) = neighbor {
+                        // The face is touching air
+                        self.add_face(position, &face, block, queue);
+                    } else {
+                        // The face is touching a neighbor
+                        self.remove_face(position, &face, queue);
+                        chunk.mesh.remove_face(v, &face.get_opposite(), queue);
+                    }
+                },
+                None => {
+                    // The face is on the edge of a chunk
+                    self.add_face(position, &face, block, queue)
+                }
+            }
+        }
+    }
+
+    fn get_buf_offset(position: Vector3<i32>, face: &Direction) -> (u64, u64) {
+        let flattened = ChunkMesh::flatten_3d(position.into());
+
+        let v_off =
+            flattened * std::mem::size_of::<ChunkVertex>() as u64 * 24 + face.index() as u64 * std::mem::size_of::<ChunkVertex>() as u64 * 4;
+
+        let i_off =
+            flattened * std::mem::size_of::<u32>() as u64 * 36 + face.index() as u64 * std::mem::size_of::<u32>() as u64 * 6;
+
+        (v_off, i_off)
+    }
+
+    fn add_face(&self, position: Vector3<i32>, face: &Direction, block: &block::Block, queue: &wgpu::Queue) {
+        let flattened = ChunkMesh::flatten_3d(position.into());
 
         let vertices = {
             let position = Vector3::new(position.x as f32, position.y as f32, position.z as f32);
 
-            CUBE_VERTS
+            face.cube_verts()
                 .iter()
-                .zip(block.deref().texture_coordinates().to_vec().iter())
-                .map(|(p, t)| ChunkVertex {
-                    position: *p + position,
-                    tex_coord: *t,
+                .zip(&block.deref().texture_coordinates().to_vec()[(face.index() * 4) as usize..(face.index() * 4 + 4) as usize])
+                .map(|(p, t)| {
+                    ChunkVertex {
+                        position: *p + position,
+                        tex_coord: *t,
+                    }
                 })
                 .collect::<Vec<_>>()
         };
 
+        let (v_off, i_off) = ChunkMesh::get_buf_offset(position, &face);
+
         queue.write_buffer(
             &self.vertex_buffer,
-            flattened * std::mem::size_of::<ChunkVertex>() as u64 * 24,
+            v_off,
             bytemuck::cast_slice(&vertices),
         );
 
         queue.write_buffer(
             &self.index_buffer,
-            flattened * 36 * 4, // each index is 4 bytes, and there are 36 indicies per cube
-            bytemuck::cast_slice(&CUBE_INDICES.map(|i| i + 24 * flattened as u32)),
+            i_off,
+            bytemuck::cast_slice(&face.cube_indices().map(|i| i + 24 * flattened as u32)),
+        );
+    }
+
+    fn remove_face(&self, position: Vector3<i32>, face: &Direction, queue: &wgpu::Queue) {
+        let (v_off, i_off) = ChunkMesh::get_buf_offset(position, &face);
+
+        queue.write_buffer(
+            &self.vertex_buffer,
+            v_off,
+            bytemuck::cast_slice(&[0 as u8; std::mem::size_of::<ChunkVertex>() * 4]),
+        );
+
+        queue.write_buffer(
+            &self.index_buffer,
+            i_off,
+            bytemuck::cast_slice(&[0 as u32; 6]),
         );
     }
 }
@@ -193,6 +320,7 @@ impl Chunk {
 
     pub fn set_block(&mut self, position: Vector3<i32>, block: block::Block, queue: &wgpu::Queue) {
         self.mesh.add_block(
+            self,
             Vector3::new(position.x, position.y, position.z),
             &block,
             queue,
@@ -203,6 +331,12 @@ impl Chunk {
             (position.y + (CHUNK_HEIGHT >> 1) as i32) as usize,
             position.z as usize,
         ]] = block;
+    }
+
+    pub fn get_block(&self, mut position: Vector3<i32>) -> Option<&block::Block> {
+        // let mut position: Option<Vector3<usize>> = position.cast();
+        position.y = position.y + (CHUNK_HEIGHT >> 1) as i32;
+        self.blocks.get((position.x as usize, position.y as usize, position.z as usize))
     }
 }
 

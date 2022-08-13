@@ -61,13 +61,13 @@ pub(crate) fn create_render_pipeline(
 			// targets: &[Some(color_format.into())],
 		}),
 		primitive: wgpu::PrimitiveState {
-			// topology: wgpu::PrimitiveTopology::TriangleList,
-			// strip_index_format: None,
-			// front_face: wgpu::FrontFace::Ccw,
-			// cull_mode: Some(wgpu::Face::Back),
-			// polygon_mode: wgpu::PolygonMode::Fill,
-			// unclipped_depth: false,
-			// conservative: false,
+			topology: wgpu::PrimitiveTopology::TriangleList,
+			strip_index_format: None,
+			front_face: wgpu::FrontFace::Ccw,
+			cull_mode: Some(wgpu::Face::Back),
+			polygon_mode: wgpu::PolygonMode::Fill,
+			unclipped_depth: false,
+			conservative: false,
 			..Default::default()
 		},
 		depth_stencil: depth_format.map(|format| wgpu::DepthStencilState {
