@@ -125,17 +125,36 @@ impl State {
         );
         imgui.set_ini_filename(None);
 
-        let font_size = (13.0 * hidpi_factor) as f32;
+        let font_size = (16.0 * hidpi_factor) as f32;
         imgui.io_mut().font_global_scale = (1.0 / hidpi_factor) as f32;
 
-        imgui.fonts().add_font(&[FontSource::DefaultFontData {
-            config: Some(imgui::FontConfig {
-                oversample_h: 1,
-                pixel_snap_h: true,
+        imgui.fonts().add_font(&[
+            // FontSource::DefaultFontData {
+            //     config: Some(imgui::FontConfig {
+            //         size_pixels: font_size,
+            //         ..Default::default()
+            //     })
+            // },
+            FontSource::TtfData {
+                data: &get_bytes("fonts/Silkscreen-Regular.ttf").unwrap(),
                 size_pixels: font_size,
-                ..Default::default()
-            })
-        }]);
+                config: Some(imgui::FontConfig {
+                    size_pixels: font_size,
+                    ..Default::default()
+                })
+            },
+        ]);
+
+        imgui.fonts().add_font(&[
+            FontSource::TtfData {
+                data: &get_bytes("fonts/Silkscreen-Bold.ttf").unwrap(),
+                size_pixels: font_size,
+                config: Some(imgui::FontConfig {
+                    size_pixels: font_size,
+                    ..Default::default()
+                })
+            },
+        ]);
 
         let renderer_config = RendererConfig {
             texture_format: config.format,
@@ -401,6 +420,8 @@ impl State {
             .prepare_frame(self.imgui.io_mut(), window)
             .expect("Failed to prepare frame");
 
+        let bold_font = self.imgui.fonts().fonts()[1];
+
         let ui: imgui::Ui = self.imgui.frame();
 
         self.ui_focus = ui.io().want_capture_mouse;
@@ -418,7 +439,9 @@ impl State {
             .title_bar(false)
             .always_auto_resize(true)
             .build(&ui, || {
+                let bold = ui.push_font(bold_font);
                 ui.text("Debug Info");
+                bold.pop();
                 ui.separator();
                 ui.text(format!("FPS: {:?}", self.fps_counter.last_second_frames.len()));
             });
