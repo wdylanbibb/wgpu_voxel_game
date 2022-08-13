@@ -338,6 +338,16 @@ impl State {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
+        self.render_world(&view)?;
+
+        self.render_gui(&view, window)?;
+
+        output.present();
+
+        Ok(())
+    }
+
+    fn render_world(&mut self, view: &wgpu::TextureView) -> Result<(), wgpu::SurfaceError> {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -348,7 +358,7 @@ impl State {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -376,6 +386,10 @@ impl State {
 
         self.queue.submit(iter::once(encoder.finish()));
 
+        Ok(())
+    }
+
+    fn render_gui(&mut self, view: &wgpu::TextureView, window: &Window) -> Result<(), wgpu::SurfaceError> {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -395,14 +409,16 @@ impl State {
             self.platform.prepare_render(&ui, window);
         }
 
-        imgui::Window::new("Game Info")
+        let _ = imgui::Window::new("Game Info")
             .size(Vector2::zero().into(), Condition::FirstUseEver)
             .position(Vector2::new(0.0, 0.0).into(), Condition::FirstUseEver)
             .resizable(false)
-            .movable(false)
+            // .movable(false)
             .title_bar(false)
             .always_auto_resize(true)
             .build(&ui, || {
+                ui.text("Debug Info");
+                ui.separator();
                 ui.text(format!("FPS: {:?}", self.fps_counter.last_second_frames.len()));
             });
 
@@ -410,7 +426,7 @@ impl State {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
@@ -426,8 +442,6 @@ impl State {
         }
 
         self.queue.submit(iter::once(encoder.finish()));
-
-        output.present();
 
         Ok(())
     }
