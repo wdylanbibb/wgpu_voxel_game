@@ -6,7 +6,7 @@ use std::path::Path;
 use bytemuck::{Pod, Zeroable};
 use cgmath::{Matrix4, SquareMatrix, Vector2, Vector3, Vector4, Zero};
 use imgui::{Condition, FontSource, MouseCursor};
-use imgui_wgpu::{Renderer, RendererConfig};
+use imgui_wgpu::{RendererConfig};
 use wgpu::util::DeviceExt;
 use winit::{
     dpi::PhysicalSize,
@@ -15,7 +15,8 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-use crate::chunk::{DrawChunk, Vertex};
+use crate::chunk::{Vertex};
+use crate::renderer::{Draw, Renderer};
 use crate::resources::get_bytes;
 
 mod block;
@@ -52,14 +53,10 @@ impl CameraUniform {
 }
 
 struct State {
-    surface: wgpu::Surface,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
-    size: PhysicalSize<u32>,
+    renderer: Renderer,
     imgui: imgui::Context,
     platform: imgui_winit_support::WinitPlatform,
-    renderer: Renderer,
+    gui_renderer: imgui_wgpu::Renderer,
     camera: camera::Camera,
     projection: camera::Projection,
     camera_controller: camera::CameraController,
@@ -68,7 +65,6 @@ struct State {
     camera_bind_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
     chunk: chunk::Chunk,
-    depth_texture: texture::Texture,
     fps_counter: renderer::FPSCounter,
     last_cursor: Option<MouseCursor>,
     mouse_pressed: bool,
@@ -77,42 +73,7 @@ struct State {
 
 impl State {
     async fn new(window: &Window) -> Self {
-        let size = window.inner_size();
-
-        // The instance is a handle to our GPU
-        // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
-        let instance = wgpu::Instance::new(wgpu::Backends::all());
-        let surface = unsafe { instance.create_surface(window) };
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
-            })
-            .await
-            .unwrap();
-
-        let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: None,
-                    features: wgpu::Features::empty(),
-                    limits: wgpu::Limits::default(),
-                },
-                // Some(&std::path::Path::new("trace")), // Trace path
-                None,
-            )
-            .await
-            .unwrap();
-
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface.get_supported_formats(&adapter)[0],
-            width: size.width,
-            height: size.height,
-            present_mode: wgpu::PresentMode::Fifo,
-        };
-        surface.configure(&device, &config);
+        let renderer = Renderer::new(window).await;
 
         let hidpi_factor = window.scale_factor();
 
@@ -157,14 +118,14 @@ impl State {
         ]);
 
         let renderer_config = RendererConfig {
-            texture_format: config.format,
+            texture_format: renderer.config.format,
             ..Default::default()
         };
 
-        let renderer = Renderer::new(&mut imgui, &device, &queue, renderer_config);
+        let gui_renderer = imgui_wgpu::Renderer::new(&mut imgui, &renderer.device, &renderer.queue, renderer_config);
 
         let texture_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            renderer.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
@@ -188,20 +149,20 @@ impl State {
 
         let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
         let projection =
-            camera::Projection::new(config.width, config.height, cgmath::Deg(45.0), 0.1, 100.0);
+            camera::Projection::new(renderer.config.width, renderer.config.height, cgmath::Deg(45.0), 0.1, 100.0);
         let camera_controller = camera::CameraController::new(16.0, 0.4);
 
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera, &projection);
 
-        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let camera_buffer = renderer.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera Buffer"),
             contents: bytemuck::cast_slice(&[camera_uniform]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
         let camera_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            renderer.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
@@ -215,7 +176,7 @@ impl State {
                 label: Some("camera bind layout group"),
             });
 
-        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let camera_bind_group = renderer.device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &camera_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
@@ -225,7 +186,7 @@ impl State {
         });
 
         let render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            renderer.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout],
                 push_constant_ranges: &[],
                 label: Some("render pipeline layout"),
@@ -237,9 +198,9 @@ impl State {
                 label: Some("Texture Shader"),
             };
             renderer::create_render_pipeline(
-                &device,
+                &renderer.device,
                 &render_pipeline_layout,
-                config.format,
+                renderer.config.format,
                 Some(texture::Texture::DEPTH_FORMAT),
                 &[chunk::ChunkVertex::desc()],
                 shader,
@@ -249,36 +210,29 @@ impl State {
         let mut chunk = {
             let material = material::Material::new(
                 "Atlas Mat",
-                texture::Texture::new(Path::new("sprite_atlas.png"), false, &device, &queue),
-                &device,
+                texture::Texture::new(Path::new("sprite_atlas.png"), false, &renderer.device, &renderer.queue),
+                &renderer.device,
                 &texture_bind_group_layout,
             );
 
-            chunk::Chunk::new(material, &device)
+            chunk::Chunk::new(material, &renderer.device)
         };
 
         for x in 0..10 {
             for z in 0..10 {
-                chunk.set_block(Vector3::new(x, 0, z), block::Block::Grass(block::Grass), &queue);
+                chunk.set_block(Vector3::new(x, 0, z), block::Block::Grass(block::Grass), &renderer.queue);
             }
         }
 
-        chunk.set_block(Vector3::new(5, 1, 5), block::Block::Stone(block::Stone), &queue);
-
-        let depth_texture =
-            texture::Texture::create_depth_texture(&device, &config, "depth texture");
+        chunk.set_block(Vector3::new(5, 1, 5), block::Block::Stone(block::Stone), &renderer.queue);
 
         let fps_counter = renderer::FPSCounter::new();
 
         Self {
-            surface,
-            device,
-            queue,
-            config,
-            size,
+            renderer,
             imgui,
             platform,
-            renderer,
+            gui_renderer,
             camera,
             projection,
             camera_controller,
@@ -287,7 +241,6 @@ impl State {
             camera_bind_group,
             render_pipeline,
             chunk,
-            depth_texture,
             fps_counter,
             last_cursor: None,
             mouse_pressed: false,
@@ -297,17 +250,17 @@ impl State {
 
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
-            self.size = new_size;
+            self.renderer.size = new_size;
 
             self.projection.resize(new_size.width, new_size.height);
 
-            self.config.width = new_size.width;
-            self.config.height = new_size.height;
+            self.renderer.config.width = new_size.width;
+            self.renderer.config.height = new_size.height;
 
-            self.surface.configure(&self.device, &self.config);
+            self.renderer.surface.configure(&self.renderer.device, &self.renderer.config);
 
-            self.depth_texture =
-                texture::Texture::create_depth_texture(&self.device, &self.config, "depth texture");
+            self.renderer.depth_texture =
+                texture::Texture::create_depth_texture(&self.renderer.device, &self.renderer.config, "depth texture");
         }
     }
 
@@ -343,7 +296,7 @@ impl State {
         self.camera_controller.update_camera(&mut self.camera, dt);
         self.camera_uniform
             .update_view_proj(&self.camera, &self.projection);
-        self.queue.write_buffer(
+        self.renderer.queue.write_buffer(
             &self.camera_buffer,
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
@@ -353,7 +306,7 @@ impl State {
     }
 
     fn render(&mut self, window: &Window) -> Result<(), wgpu::SurfaceError> {
-        let output = self.surface.get_current_texture()?;
+        let output = self.renderer.surface.get_current_texture()?;
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -369,7 +322,7 @@ impl State {
 
     fn render_world(&mut self, view: &wgpu::TextureView) -> Result<(), wgpu::SurfaceError> {
         let mut encoder = self
-            .device
+            .renderer.device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
@@ -391,7 +344,7 @@ impl State {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_texture.view,
+                    view: &self.renderer.depth_texture.view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: true,
@@ -401,17 +354,17 @@ impl State {
             });
             render_pass.set_pipeline(&self.render_pipeline);
 
-            render_pass.draw_chunk(&self.chunk, &self.camera_bind_group);
+            self.chunk.mesh.draw(&mut render_pass, &self.camera_bind_group);
         }
 
-        self.queue.submit(iter::once(encoder.finish()));
+        self.renderer.queue.submit(iter::once(encoder.finish()));
 
         Ok(())
     }
 
     fn render_gui(&mut self, view: &wgpu::TextureView, window: &Window) -> Result<(), wgpu::SurfaceError> {
         let mut encoder = self
-            .device
+            .renderer.device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
@@ -460,12 +413,12 @@ impl State {
                 depth_stencil_attachment: None,
             });
 
-            self.renderer
-                .render(ui.render(), &self.queue, &self.device, &mut render_pass)
+            self.gui_renderer
+                .render(ui.render(), &self.renderer.queue, &self.renderer.device, &mut render_pass)
                 .expect("Rendering failed");
         }
 
-        self.queue.submit(iter::once(encoder.finish()));
+        self.renderer.queue.submit(iter::once(encoder.finish()));
 
         Ok(())
     }
@@ -477,7 +430,7 @@ pub async fn run() {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .with_title("Voxel Game")
-        .with_inner_size(PhysicalSize::new(1080, 720))
+        .with_inner_size(PhysicalSize::new(1280, 720))
         .build(&event_loop)
         .unwrap();
 
@@ -529,7 +482,7 @@ pub async fn run() {
                 match state.render(&window) {
                     Ok(_) => {}
                     // Reconfigure the surface if lost
-                    Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
+                    Err(wgpu::SurfaceError::Lost) => state.resize(state.renderer.size),
                     // The system is out of memory, we should probably quit
                     Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
                     // All other errors (Outdated, Timeout) should be resolved by the next frame

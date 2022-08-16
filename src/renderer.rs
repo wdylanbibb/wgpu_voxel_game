@@ -2,6 +2,75 @@
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
+use winit::dpi::PhysicalSize;
+use winit::window::Window;
+use crate::texture::Texture;
+
+pub trait Draw {
+	fn draw<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>, uniforms: &'a wgpu::BindGroup);
+}
+
+pub struct Renderer {
+	pub surface: wgpu::Surface,
+	pub device: wgpu::Device,
+	pub queue: wgpu::Queue,
+	pub config: wgpu::SurfaceConfiguration,
+	pub size: PhysicalSize<u32>,
+
+	pub depth_texture: Texture,
+}
+
+impl Renderer {
+	pub async fn new(window: &Window) -> Self {
+		let size = window.inner_size();
+
+		// The instance is a handle to our GPU
+		// BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
+		let instance = wgpu::Instance::new(wgpu::Backends::all());
+		let surface = unsafe { instance.create_surface(window) };
+		let adapter = instance
+			.request_adapter(&wgpu::RequestAdapterOptions {
+				power_preference: wgpu::PowerPreference::default(),
+				compatible_surface: Some(&surface),
+				force_fallback_adapter: false,
+			})
+			.await
+			.unwrap();
+
+		let (device, queue) = adapter
+			.request_device(
+				&wgpu::DeviceDescriptor {
+					label: None,
+					features: wgpu::Features::empty(),
+					limits: wgpu::Limits::default(),
+				},
+				// Some(&std::path::Path::new("trace")), // Trace path
+				None,
+			)
+			.await
+			.unwrap();
+
+		let config = wgpu::SurfaceConfiguration {
+			usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+			format: surface.get_supported_formats(&adapter)[0],
+			width: size.width,
+			height: size.height,
+			present_mode: wgpu::PresentMode::Fifo,
+		};
+		surface.configure(&device, &config);
+
+		let depth_texture = Texture::create_depth_texture(&device, &config, "depth_texture");
+
+		Self {
+			surface,
+			device,
+			queue,
+			config,
+			size,
+			depth_texture,
+		}
+	}
+}
 
 #[derive(Debug)]
 pub struct FPSCounter {

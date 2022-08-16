@@ -4,6 +4,7 @@ use cgmath::{ElementWise, Vector2, Vector3};
 use ndarray::Array3;
 use std::ops::Deref;
 use wgpu::util::DeviceExt;
+use crate::renderer::Draw;
 
 /*
        (-1, 1, -1) /-------------------| (1, 1, -1)
@@ -340,19 +341,32 @@ impl Chunk {
     }
 }
 
-pub trait DrawChunk<'a> {
-    fn draw_chunk(&mut self, chunk: &'a Chunk, camera_bind_group: &'a wgpu::BindGroup);
-}
-
-impl<'a, 'b> DrawChunk<'b> for wgpu::RenderPass<'a>
-where
-    'b: 'a,
-{
-    fn draw_chunk(&mut self, chunk: &'b Chunk, camera_bind_group: &'b wgpu::BindGroup) {
-        self.set_vertex_buffer(0, chunk.mesh.vertex_buffer.slice(..));
-        self.set_index_buffer(chunk.mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        self.set_bind_group(0, &chunk.mesh.material.bind_group, &[]);
-        self.set_bind_group(1, camera_bind_group, &[]);
-        self.draw_indexed(0..chunk.mesh.num_elements, 0, 0..1);
+impl Draw for ChunkMesh {
+    fn draw<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>, uniforms: &'a wgpu::BindGroup) {
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        render_pass.set_bind_group(0, &self.material.bind_group, &[]);
+        render_pass.set_bind_group(1, uniforms, &[]);
+        render_pass.draw_indexed(0..self.num_elements, 0, 0..1);
     }
 }
+
+// pub trait DrawChunk<'a> {
+//     fn draw_chunk(&mut self, chunk: &'a Chunk, camera_bind_group: &'a wgpu::BindGroup);
+// }
+// 
+// impl<'a, 'b> DrawChunk<'b> for wgpu::RenderPass<'a>
+// where
+//     'b: 'a,
+// {
+//     fn draw_chunk(&mut self, chunk: &'b Chunk, camera_bind_group: &'b wgpu::BindGroup) {
+//         self.push_debug_group("Prepare chunk data for draw");
+//         self.set_vertex_buffer(0, chunk.mesh.vertex_buffer.slice(..));
+//         self.set_index_buffer(chunk.mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+//         self.set_bind_group(0, &chunk.mesh.material.bind_group, &[]);
+//         self.set_bind_group(1, camera_bind_group, &[]);
+//         self.pop_debug_group();
+//         self.insert_debug_marker("Draw!");
+//         self.draw_indexed(0..chunk.mesh.num_elements, 0, 0..1);
+//     }
+// }
