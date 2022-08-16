@@ -4,7 +4,6 @@ use cgmath::{ElementWise, Vector2, Vector3};
 use ndarray::Array3;
 use std::ops::Deref;
 use wgpu::util::DeviceExt;
-use crate::renderer::Draw;
 
 /*
        (-1, 1, -1) /-------------------| (1, 1, -1)
@@ -188,7 +187,7 @@ impl ChunkMesh {
             as u64
     }
 
-    fn add_block(&self, chunk: &Chunk, position: Vector3<i32>, block: &block::Block, queue: &wgpu::Queue) {
+    fn set_block(&self, chunk: &Chunk, position: Vector3<i32>, block: &block::Block, queue: &wgpu::Queue) {
         let flattened = ChunkMesh::flatten_3d(position.into());
 
         if let block::Block::Air(_) = block {
@@ -203,6 +202,30 @@ impl ChunkMesh {
                 flattened * std::mem::size_of::<u32>() as u64 * 36,
                 bytemuck::cast_slice(&[0 as u32; 36]),
             );
+
+            for face in [
+                Direction::FRONT,
+                Direction::BACK,
+                Direction::TOP,
+                Direction::BOTTOM,
+                Direction::LEFT,
+                Direction::RIGHT,
+            ] {
+                let v = face.to_vec3().add_element_wise(position);
+
+                let neighbor = chunk.get_block(v);
+                match neighbor {
+                    Some(neighbor) => {
+                        if let block::Block::Air(_) = neighbor {
+                            // The face is touching air: do nothing
+                        } else {
+                            // The face is touching a neighbor: put the block face back
+                            self.add_face(v, &face.get_opposite(), &neighbor, queue);
+                        }
+                    },
+                    _ => () // The air block is on the edge of a chunk: do nothing
+                }
+            }
 
             return;
         }
@@ -320,7 +343,7 @@ impl Chunk {
     }
 
     pub fn set_block(&mut self, position: Vector3<i32>, block: block::Block, queue: &wgpu::Queue) {
-        self.mesh.add_block(
+        self.mesh.set_block(
             self,
             Vector3::new(position.x, position.y, position.z),
             &block,
@@ -341,32 +364,22 @@ impl Chunk {
     }
 }
 
-impl Draw for ChunkMesh {
-    fn draw<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>, uniforms: &'a wgpu::BindGroup) {
-        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        render_pass.set_bind_group(0, &self.material.bind_group, &[]);
-        render_pass.set_bind_group(1, uniforms, &[]);
-        render_pass.draw_indexed(0..self.num_elements, 0, 0..1);
-    }
+pub trait DrawChunk<'a> {
+    fn draw_chunk(&mut self, chunk: &'a Chunk, camera_bind_group: &'a wgpu::BindGroup);
 }
 
-// pub trait DrawChunk<'a> {
-//     fn draw_chunk(&mut self, chunk: &'a Chunk, camera_bind_group: &'a wgpu::BindGroup);
-// }
-// 
-// impl<'a, 'b> DrawChunk<'b> for wgpu::RenderPass<'a>
-// where
-//     'b: 'a,
-// {
-//     fn draw_chunk(&mut self, chunk: &'b Chunk, camera_bind_group: &'b wgpu::BindGroup) {
-//         self.push_debug_group("Prepare chunk data for draw");
-//         self.set_vertex_buffer(0, chunk.mesh.vertex_buffer.slice(..));
-//         self.set_index_buffer(chunk.mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-//         self.set_bind_group(0, &chunk.mesh.material.bind_group, &[]);
-//         self.set_bind_group(1, camera_bind_group, &[]);
-//         self.pop_debug_group();
-//         self.insert_debug_marker("Draw!");
-//         self.draw_indexed(0..chunk.mesh.num_elements, 0, 0..1);
-//     }
-// }
+impl<'a, 'b> DrawChunk<'b> for wgpu::RenderPass<'a>
+where
+    'b: 'a,
+{
+    fn draw_chunk(&mut self, chunk: &'b Chunk, camera_bind_group: &'b wgpu::BindGroup) {
+        self.push_debug_group("Prepare chunk data for draw");
+        self.set_vertex_buffer(0, chunk.mesh.vertex_buffer.slice(..));
+        self.set_index_buffer(chunk.mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        self.set_bind_group(0, &chunk.mesh.material.bind_group, &[]);
+        self.set_bind_group(1, camera_bind_group, &[]);
+        self.pop_debug_group();
+        self.insert_debug_marker("Draw!");
+        self.draw_indexed(0..chunk.mesh.num_elements, 0, 0..1);
+    }
+}

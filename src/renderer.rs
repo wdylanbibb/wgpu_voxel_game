@@ -6,10 +6,6 @@ use winit::dpi::PhysicalSize;
 use winit::window::Window;
 use crate::texture::Texture;
 
-pub trait Draw {
-	fn draw<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>, uniforms: &'a wgpu::BindGroup);
-}
-
 pub struct Renderer {
 	pub surface: wgpu::Surface,
 	pub device: wgpu::Device,

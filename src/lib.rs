@@ -15,8 +15,8 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-use crate::chunk::{Vertex};
-use crate::renderer::{Draw, Renderer};
+use crate::chunk::{DrawChunk, Vertex};
+use crate::renderer::{Renderer};
 use crate::resources::get_bytes;
 
 mod block;
@@ -226,6 +226,8 @@ impl State {
 
         chunk.set_block(Vector3::new(5, 1, 5), block::Block::Stone(block::Stone), &renderer.queue);
 
+        chunk.set_block(Vector3::new(3, 0, 3), block::Block::Air(block::Air), &renderer.queue);
+
         let fps_counter = renderer::FPSCounter::new();
 
         Self {
@@ -354,7 +356,8 @@ impl State {
             });
             render_pass.set_pipeline(&self.render_pipeline);
 
-            self.chunk.mesh.draw(&mut render_pass, &self.camera_bind_group);
+            // self.chunk.mesh.draw(&mut render_pass, &self.camera_bind_group);
+            render_pass.draw_chunk(&self.chunk, &self.camera_bind_group);
         }
 
         self.renderer.queue.submit(iter::once(encoder.finish()));
