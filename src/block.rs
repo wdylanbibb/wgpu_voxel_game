@@ -122,6 +122,7 @@ trait_enum! {
                 TexCoordConfig::top_bottom_sides(Vector2::new(0.0, 0.0), Vector2::new(32.0, 0.0), Vector2::new(16.0, 0.0))
             }
         },
+        #[allow(dead_code)]
         Stone: {
             fn texture_coordinates(&self) -> TexCoordConfig {
                 TexCoordConfig::all_same(Vector2::new(48.0, 0.0))
