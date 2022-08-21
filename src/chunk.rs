@@ -1,8 +1,9 @@
-use crate::block;
+use crate::{block, renderer};
 use crate::material::Material;
 use cgmath::{ElementWise, Vector2, Vector3};
 use ndarray::Array3;
 use std::ops::Deref;
+use wgpu::{BindGroup, RenderPass};
 use wgpu::util::DeviceExt;
 
 /*
@@ -187,8 +188,8 @@ impl ChunkMesh {
             as u64
     }
 
-    fn set_block(&self, chunk: &Chunk, position: Vector3<i32>, block: &block::Block, queue: &wgpu::Queue) {
-        let flattened = ChunkMesh::flatten_3d(position.into());
+    fn set_block(&self, chunk: &Chunk, chunk_position: Vector3<i32>, block: &block::Block, queue: &wgpu::Queue) {
+        let flattened = ChunkMesh::flatten_3d(chunk_position.into());
 
         if let block::Block::Air(_) = block {
             queue.write_buffer(
@@ -211,7 +212,7 @@ impl ChunkMesh {
                 Direction::LEFT,
                 Direction::RIGHT,
             ] {
-                let v = face.to_vec3().add_element_wise(position);
+                let v = face.to_vec3().add_element_wise(chunk_position);
 
                 let neighbor = chunk.get_block(v);
                 match neighbor {
@@ -220,7 +221,7 @@ impl ChunkMesh {
                             // The face is touching air: do nothing
                         } else {
                             // The face is touching a neighbor: put the block face back
-                            self.add_face(v, &face.get_opposite(), &neighbor, queue);
+                            self.add_face(v, chunk.world_offset, &face.get_opposite(), &neighbor, queue);
                         }
                     },
                     _ => () // The air block is on the edge of a chunk: do nothing
@@ -238,30 +239,30 @@ impl ChunkMesh {
             Direction::LEFT,
             Direction::RIGHT,
         ] {
-            let v = face.to_vec3().add_element_wise(position);
+            let v = face.to_vec3().add_element_wise(chunk_position);
 
             let neighbor = chunk.get_block(v);
             match neighbor {
                 Some(neighbor) => {
                     if let block::Block::Air(_) = neighbor {
                         // The face is touching air
-                        self.add_face(position, &face, block, queue);
+                        self.add_face(chunk_position, chunk.world_offset, &face, block, queue);
                     } else {
                         // The face is touching a neighbor
-                        self.remove_face(position, &face, queue);
+                        self.remove_face(chunk_position, &face, queue);
                         chunk.mesh.remove_face(v, &face.get_opposite(), queue);
                     }
                 },
                 None => {
                     // The face is on the edge of a chunk
-                    self.add_face(position, &face, block, queue)
+                    self.add_face(chunk_position, chunk.world_offset, &face, block, queue)
                 }
             }
         }
     }
 
-    fn get_buf_offset(position: Vector3<i32>, face: &Direction) -> (u64, u64) {
-        let flattened = ChunkMesh::flatten_3d(position.into());
+    fn get_buf_offset(chunk_position: Vector3<i32>, face: &Direction) -> (u64, u64) {
+        let flattened = ChunkMesh::flatten_3d(chunk_position.into());
 
         let v_off =
             flattened * std::mem::size_of::<ChunkVertex>() as u64 * 24 + face.index() as u64 * std::mem::size_of::<ChunkVertex>() as u64 * 4;
@@ -272,25 +273,26 @@ impl ChunkMesh {
         (v_off, i_off)
     }
 
-    fn add_face(&self, position: Vector3<i32>, face: &Direction, block: &block::Block, queue: &wgpu::Queue) {
-        let flattened = ChunkMesh::flatten_3d(position.into());
+    fn add_face(&self, chunk_position: Vector3<i32>, world_offset: Vector2<i32>, face: &Direction, block: &block::Block, queue: &wgpu::Queue) {
+        let flattened = ChunkMesh::flatten_3d(chunk_position.into());
+        let world_offset = Vector3::new(world_offset.x as f32 * CHUNK_WIDTH as f32, 0.0, world_offset.y as f32 * CHUNK_DEPTH as f32);
 
         let vertices = {
-            let position = Vector3::new(position.x as f32, position.y as f32, position.z as f32);
+            let position = chunk_position.cast::<f32>().unwrap();
 
             face.cube_verts()
                 .iter()
                 .zip(&block.deref().texture_coordinates().to_vec()[(face.index() * 4) as usize..(face.index() * 4 + 4) as usize])
                 .map(|(p, t)| {
                     ChunkVertex {
-                        position: *p + position,
+                        position: *p + position + world_offset,
                         tex_coord: *t,
                     }
                 })
                 .collect::<Vec<_>>()
         };
 
-        let (v_off, i_off) = ChunkMesh::get_buf_offset(position, &face);
+        let (v_off, i_off) = ChunkMesh::get_buf_offset(chunk_position, &face);
 
         queue.write_buffer(
             &self.vertex_buffer,
@@ -330,22 +332,31 @@ const CHUNK_SIZE: usize = CHUNK_WIDTH * CHUNK_HEIGHT * CHUNK_DEPTH;
 
 pub struct Chunk {
     pub blocks: Array3<block::Block>,
+    pub world_offset: Vector2<i32>,
     pub mesh: ChunkMesh,
 }
 
 impl Chunk {
-    pub fn new(material: Material, device: &wgpu::Device) -> Self {
+    pub fn new(world_offset: Vector2<i32>, material: Material, device: &wgpu::Device) -> Self {
         let blocks = Array3::<block::Block>::from_shape_fn(CHUNK_DIMS, |_| block::Block::Air(block::Air));
 
         let mesh = ChunkMesh::new(material, &device);
 
-        Self { blocks, mesh }
+        Self { blocks, world_offset, mesh }
+    }
+
+    pub fn with_blocks(mut self, blocks: Vec<(Vector3<i32>, block::Block)>, queue: &wgpu::Queue) -> Self {
+        for (position, block) in blocks {
+            self.set_block(position, block, queue);
+        }
+
+        self
     }
 
     pub fn set_block(&mut self, position: Vector3<i32>, block: block::Block, queue: &wgpu::Queue) {
         self.mesh.set_block(
             self,
-            Vector3::new(position.x, position.y, position.z),
+            position,
             &block,
             queue,
         );
@@ -364,22 +375,32 @@ impl Chunk {
     }
 }
 
-pub trait DrawChunk<'a> {
-    fn draw_chunk(&mut self, chunk: &'a Chunk, camera_bind_group: &'a wgpu::BindGroup);
-}
-
-impl<'a, 'b> DrawChunk<'b> for wgpu::RenderPass<'a>
-where
-    'b: 'a,
-{
-    fn draw_chunk(&mut self, chunk: &'b Chunk, camera_bind_group: &'b wgpu::BindGroup) {
-        self.push_debug_group("Prepare chunk data for draw");
-        self.set_vertex_buffer(0, chunk.mesh.vertex_buffer.slice(..));
-        self.set_index_buffer(chunk.mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        self.set_bind_group(0, &chunk.mesh.material.bind_group, &[]);
-        self.set_bind_group(1, camera_bind_group, &[]);
-        self.pop_debug_group();
-        self.insert_debug_marker("Draw!");
-        self.draw_indexed(0..chunk.mesh.num_elements, 0, 0..1);
+impl renderer::Draw for ChunkMesh {
+    fn draw<'a>(&'a self, render_pass: &mut RenderPass<'a>, uniforms: &'a BindGroup) {
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        render_pass.set_bind_group(0, &self.material.bind_group, &[]);
+        render_pass.set_bind_group(1, uniforms, &[]);
+        render_pass.draw_indexed(0..self.num_elements, 0, 0..1);
     }
 }
+
+// pub trait DrawChunk<'a> {
+//     fn draw_chunk(&mut self, chunk: &'a Chunk, camera_bind_group: &'a wgpu::BindGroup);
+// }
+//
+// impl<'a, 'b> DrawChunk<'b> for wgpu::RenderPass<'a>
+// where
+//     'b: 'a,
+// {
+//     fn draw_chunk(&mut self, chunk: &'b Chunk, camera_bind_group: &'b wgpu::BindGroup) {
+//         self.push_debug_group("Prepare chunk data for draw");
+//         self.set_vertex_buffer(0, chunk.mesh.vertex_buffer.slice(..));
+//         self.set_index_buffer(chunk.mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+//         self.set_bind_group(0, &chunk.mesh.material.bind_group, &[]);
+//         self.set_bind_group(1, camera_bind_group, &[]);
+//         self.pop_debug_group();
+//         self.insert_debug_marker("Draw!");
+//         self.draw_indexed(0..chunk.mesh.num_elements, 0, 0..1);
+//     }
+// }

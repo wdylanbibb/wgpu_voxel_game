@@ -3,8 +3,8 @@ extern crate core;
 use std::iter;
 use std::path::Path;
 
-use bytemuck::{Pod, Zeroable};
-use cgmath::{Matrix4, SquareMatrix, Vector2, Vector3, Vector4, Zero};
+
+use cgmath::{Vector2, Vector3, Zero};
 use imgui::{Condition, FontSource, MouseCursor};
 use imgui_wgpu::{RendererConfig};
 use wgpu::util::DeviceExt;
@@ -15,7 +15,7 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-use crate::chunk::{DrawChunk, Vertex};
+use crate::chunk::{Vertex};
 use crate::renderer::{Renderer};
 use crate::resources::get_bytes;
 
@@ -28,29 +28,7 @@ mod trait_enum;
 mod renderer;
 mod resources;
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-struct CameraUniform {
-    view_position: Vector4<f32>,
-    view_proj: Matrix4<f32>,
-}
 
-unsafe impl Pod for CameraUniform {}
-unsafe impl Zeroable for CameraUniform {}
-
-impl CameraUniform {
-    fn new() -> Self {
-        Self {
-            view_position: Vector4::new(0.0, 0.0, 0.0, 0.0),
-            view_proj: Matrix4::identity(),
-        }
-    }
-
-    fn update_view_proj(&mut self, camera: &camera::Camera, projection: &camera::Projection) {
-        self.view_position = camera.position.to_homogeneous();
-        self.view_proj = projection.calc_matrix() * camera.calc_matrix();
-    }
-}
 
 struct State {
     renderer: Renderer,
@@ -60,11 +38,11 @@ struct State {
     camera: camera::Camera,
     projection: camera::Projection,
     camera_controller: camera::CameraController,
-    camera_uniform: CameraUniform,
+    camera_uniform: renderer::CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
-    chunk: chunk::Chunk,
+    chunks: Vec<chunk::Chunk>,
     fps_counter: renderer::FPSCounter,
     last_cursor: Option<MouseCursor>,
     mouse_pressed: bool,
@@ -80,9 +58,9 @@ impl State {
         let mut imgui = imgui::Context::create();
         let mut platform = imgui_winit_support::WinitPlatform::init(&mut imgui);
         platform.attach_window(
-            imgui.io_mut(),
-            window,
-            imgui_winit_support::HiDpiMode::Default,
+        imgui.io_mut(),
+        window,
+        imgui_winit_support::HiDpiMode::Default,
         );
         imgui.set_ini_filename(None);
 
@@ -90,12 +68,6 @@ impl State {
         imgui.io_mut().font_global_scale = (1.0 / hidpi_factor) as f32;
 
         imgui.fonts().add_font(&[
-            // FontSource::DefaultFontData {
-            //     config: Some(imgui::FontConfig {
-            //         size_pixels: font_size,
-            //         ..Default::default()
-            //     })
-            // },
             FontSource::TtfData {
                 data: &get_bytes("fonts/Silkscreen-Regular.ttf").unwrap(),
                 size_pixels: font_size,
@@ -152,7 +124,7 @@ impl State {
             camera::Projection::new(renderer.config.width, renderer.config.height, cgmath::Deg(45.0), 0.1, 100.0);
         let camera_controller = camera::CameraController::new(16.0, 0.4);
 
-        let mut camera_uniform = CameraUniform::new();
+        let mut camera_uniform = renderer::CameraUniform::new();
         camera_uniform.update_view_proj(&camera, &projection);
 
         let camera_buffer = renderer.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -207,26 +179,34 @@ impl State {
             )
         };
 
-        let mut chunk = {
-            let material = material::Material::new(
-                "Atlas Mat",
-                texture::Texture::new(Path::new("sprite_atlas.png"), false, &renderer.device, &renderer.queue),
-                &renderer.device,
-                &texture_bind_group_layout,
-            );
+        let rectangle = (0..16).map(|x| {
+            (0..16).map(move |z| {
+                (Vector3::new(x, 0, z), block::Block::Grass(block::Grass))
+            })
+        }).flatten().collect::<Vec<(Vector3<i32>, block::Block)>>();
 
-            chunk::Chunk::new(material, &renderer.device)
-        };
+        // Create array of chunks and fill them with blocks
+        let chunks = {
+            let mut chunks = Vec::new();
 
-        for x in 0..10 {
-            for z in 0..10 {
-                chunk.set_block(Vector3::new(x, 0, z), block::Block::Grass(block::Grass), &renderer.queue);
+            for x in (-1..=1).rev() {
+                for y in (-1..=1).rev() {
+                    let material = material::Material::new(
+                        "Atlas Mat",
+                        texture::Texture::new(Path::new("sprite_atlas.png"), false, &renderer.device, &renderer.queue),
+                        &renderer.device,
+                        &texture_bind_group_layout,
+                    );
+
+                    chunks.push(
+                        chunk::Chunk::new(Vector2::new(x, y), material, &renderer.device)
+                            .with_blocks(rectangle.clone(), &renderer.queue)
+                    );
+                }
             }
-        }
 
-        chunk.set_block(Vector3::new(5, 1, 5), block::Block::Stone(block::Stone), &renderer.queue);
-
-        chunk.set_block(Vector3::new(3, 0, 3), block::Block::Air(block::Air), &renderer.queue);
+            chunks
+        };
 
         let fps_counter = renderer::FPSCounter::new();
 
@@ -242,7 +222,7 @@ impl State {
             camera_buffer,
             camera_bind_group,
             render_pipeline,
-            chunk,
+            chunks,
             fps_counter,
             last_cursor: None,
             mouse_pressed: false,
@@ -307,64 +287,19 @@ impl State {
         self.fps_counter.tick();
     }
 
-    fn render(&mut self, window: &Window) -> Result<(), wgpu::SurfaceError> {
-        let output = self.renderer.surface.get_current_texture()?;
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        self.render_world(&view)?;
-
-        self.render_gui(&view, window)?;
-
-        output.present();
+    fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        self.renderer.render(
+            &self.render_pipeline,
+            &self.camera_bind_group,
+            &self.chunks.iter().map(|chunk| {
+                &chunk.mesh
+            }).collect::<Vec<_>>()
+        )?;
 
         Ok(())
     }
 
-    fn render_world(&mut self, view: &wgpu::TextureView) -> Result<(), wgpu::SurfaceError> {
-        let mut encoder = self
-            .renderer.device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            });
-
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
-                        store: true,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.renderer.depth_texture.view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: true,
-                    }),
-                    stencil_ops: None,
-                }),
-            });
-            render_pass.set_pipeline(&self.render_pipeline);
-
-            // self.chunk.mesh.draw(&mut render_pass, &self.camera_bind_group);
-            render_pass.draw_chunk(&self.chunk, &self.camera_bind_group);
-        }
-
-        self.renderer.queue.submit(iter::once(encoder.finish()));
-
-        Ok(())
-    }
-
+    #[allow(dead_code)]
     fn render_gui(&mut self, view: &wgpu::TextureView, window: &Window) -> Result<(), wgpu::SurfaceError> {
         let mut encoder = self
             .renderer.device
@@ -482,7 +417,7 @@ pub async fn run() {
                 state.imgui.io_mut().update_delta_time(dt);
 
                 state.update(dt.as_secs_f32());
-                match state.render(&window) {
+                match state.render() {
                     Ok(_) => {}
                     // Reconfigure the surface if lost
                     Err(wgpu::SurfaceError::Lost) => state.resize(state.renderer.size),
