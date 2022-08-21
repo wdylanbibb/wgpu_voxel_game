@@ -1,10 +1,40 @@
 //! A Frames Per Second counter.
 
-use std::collections::VecDeque;
+use std::collections::vec_deque::VecDeque;
+use std::iter;
+
 use std::time::{Duration, Instant};
+use bytemuck::{Pod, Zeroable};
+use cgmath::{Matrix4, SquareMatrix, Vector4};
+
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
+use crate::camera;
 use crate::texture::Texture;
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct CameraUniform {
+	pub view_position: Vector4<f32>,
+	pub view_proj: Matrix4<f32>,
+}
+
+unsafe impl Pod for CameraUniform {}
+unsafe impl Zeroable for CameraUniform {}
+
+impl CameraUniform {
+	pub fn new() -> Self {
+		Self {
+			view_position: Vector4::new(0.0, 0.0, 0.0, 0.0),
+			view_proj: Matrix4::identity(),
+		}
+	}
+
+	pub fn update_view_proj(&mut self, camera: &camera::Camera, projection: &camera::Projection) {
+		self.view_position = camera.position.to_homogeneous();
+		self.view_proj = projection.calc_matrix() * camera.calc_matrix();
+	}
+}
 
 pub struct Renderer {
 	pub surface: wgpu::Surface,
@@ -63,10 +93,66 @@ impl Renderer {
 			queue,
 			config,
 			size,
+
 			depth_texture,
 		}
 	}
+
+	/// Renders the
+	pub fn render<T: Draw>(&mut self, render_pipeline: &wgpu::RenderPipeline, uniforms: &wgpu::BindGroup, objects: &[&T]) -> Result<(), wgpu::SurfaceError> {
+		let output = self.surface.get_current_texture()?;
+
+		let view = output
+			.texture
+			.create_view(&wgpu::TextureViewDescriptor::default());
+
+		let mut encoder = self.device.create_command_encoder(
+			&wgpu::CommandEncoderDescriptor {
+				label: Some("Render Encoder"),
+			}
+		);
+
+		{
+			let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+					label: Some("Render Pass"),
+					color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+						view: &view,
+						resolve_target: None,
+						ops: wgpu::Operations {
+							load: wgpu::LoadOp::Load,
+							store: true,
+						},
+					})],
+					depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+						view: &self.depth_texture.view,
+						depth_ops: Some(wgpu::Operations {
+							load: wgpu::LoadOp::Clear(1.0),
+							store: true,
+						}),
+						stencil_ops: None,
+					}),
+				});
+				render_pass.set_pipeline(render_pipeline);
+
+			for object in objects {
+				object.draw(&mut render_pass, uniforms);
+			}
+			// render_pass.draw_chunk(&self.chunk, &self.camera_bind_group);
+		}
+
+		self.queue.submit(iter::once(encoder.finish()));
+
+
+		output.present();
+
+		Ok(())
+	}
 }
+
+pub trait Draw {
+	fn draw<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>, uniforms: &'a wgpu::BindGroup);
+}
+
 
 #[derive(Debug)]
 pub struct FPSCounter {
