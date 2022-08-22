@@ -1,6 +1,8 @@
+use std::path::Path;
+
 use anyhow::*;
 use image::GenericImageView;
-use std::path::Path;
+
 use crate::resources::get_bytes;
 
 pub struct Texture {

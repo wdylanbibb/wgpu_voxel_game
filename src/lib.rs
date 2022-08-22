@@ -3,10 +3,9 @@ extern crate core;
 use std::iter;
 use std::path::Path;
 
-
 use cgmath::{Vector2, Vector3, Zero};
 use imgui::{Condition, FontSource, MouseCursor};
-use imgui_wgpu::{RendererConfig};
+use imgui_wgpu::RendererConfig;
 use wgpu::util::DeviceExt;
 use winit::{
     dpi::PhysicalSize,
@@ -15,20 +14,18 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-use crate::chunk::{Vertex};
-use crate::renderer::{Renderer};
+use crate::chunk::Vertex;
+use crate::renderer::Renderer;
 use crate::resources::get_bytes;
 
 mod block;
 mod camera;
 mod chunk;
 mod material;
-mod texture;
-mod trait_enum;
 mod renderer;
 mod resources;
-
-
+mod texture;
+mod trait_enum;
 
 struct State {
     renderer: Renderer,
@@ -58,111 +55,127 @@ impl State {
         let mut imgui = imgui::Context::create();
         let mut platform = imgui_winit_support::WinitPlatform::init(&mut imgui);
         platform.attach_window(
-        imgui.io_mut(),
-        window,
-        imgui_winit_support::HiDpiMode::Default,
+            imgui.io_mut(),
+            window,
+            imgui_winit_support::HiDpiMode::Default,
         );
         imgui.set_ini_filename(None);
 
         let font_size = (16.0 * hidpi_factor) as f32;
         imgui.io_mut().font_global_scale = (1.0 / hidpi_factor) as f32;
 
-        imgui.fonts().add_font(&[
-            FontSource::TtfData {
-                data: &get_bytes("fonts/Silkscreen-Regular.ttf").unwrap(),
+        imgui.fonts().add_font(&[FontSource::TtfData {
+            data: &get_bytes("fonts/Silkscreen-Regular.ttf").unwrap(),
+            size_pixels: font_size,
+            config: Some(imgui::FontConfig {
                 size_pixels: font_size,
-                config: Some(imgui::FontConfig {
-                    size_pixels: font_size,
-                    ..Default::default()
-                })
-            },
-        ]);
+                ..Default::default()
+            }),
+        }]);
 
-        imgui.fonts().add_font(&[
-            FontSource::TtfData {
-                data: &get_bytes("fonts/Silkscreen-Bold.ttf").unwrap(),
+        imgui.fonts().add_font(&[FontSource::TtfData {
+            data: &get_bytes("fonts/Silkscreen-Bold.ttf").unwrap(),
+            size_pixels: font_size,
+            config: Some(imgui::FontConfig {
                 size_pixels: font_size,
-                config: Some(imgui::FontConfig {
-                    size_pixels: font_size,
-                    ..Default::default()
-                })
-            },
-        ]);
+                ..Default::default()
+            }),
+        }]);
 
         let renderer_config = RendererConfig {
             texture_format: renderer.config.format,
             ..Default::default()
         };
 
-        let gui_renderer = imgui_wgpu::Renderer::new(&mut imgui, &renderer.device, &renderer.queue, renderer_config);
+        let gui_renderer = imgui_wgpu::Renderer::new(
+            &mut imgui,
+            &renderer.device,
+            &renderer.queue,
+            renderer_config,
+        );
 
         let texture_bind_group_layout =
-            renderer.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+            renderer
+                .device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: false,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            },
+                            count: None,
                         },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
-                label: Some("texture bind group layout"),
-            });
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                    ],
+                    label: Some("texture bind group layout"),
+                });
 
         let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
-        let projection =
-            camera::Projection::new(renderer.config.width, renderer.config.height, cgmath::Deg(45.0), 0.1, 100.0);
+        let projection = camera::Projection::new(
+            renderer.config.width,
+            renderer.config.height,
+            cgmath::Deg(45.0),
+            0.1,
+            100.0,
+        );
         let camera_controller = camera::CameraController::new(16.0, 0.4);
 
         let mut camera_uniform = renderer::CameraUniform::new();
         camera_uniform.update_view_proj(&camera, &projection);
 
-        let camera_buffer = renderer.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Camera Buffer"),
-            contents: bytemuck::cast_slice(&[camera_uniform]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        let camera_buffer = renderer
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Camera Buffer"),
+                contents: bytemuck::cast_slice(&[camera_uniform]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
 
         let camera_bind_group_layout =
-            renderer.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-                label: Some("camera bind layout group"),
-            });
+            renderer
+                .device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }],
+                    label: Some("camera bind layout group"),
+                });
 
-        let camera_bind_group = renderer.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &camera_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.as_entire_binding(),
-            }],
-            label: Some("camera bind group"),
-        });
+        let camera_bind_group = renderer
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &camera_bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: camera_buffer.as_entire_binding(),
+                }],
+                label: Some("camera bind group"),
+            });
 
         let render_pipeline_layout =
-            renderer.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout],
-                push_constant_ranges: &[],
-                label: Some("render pipeline layout"),
-            });
+            renderer
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout],
+                    push_constant_ranges: &[],
+                    label: Some("render pipeline layout"),
+                });
 
         let render_pipeline = {
             let shader = wgpu::ShaderModuleDescriptor {
@@ -179,11 +192,12 @@ impl State {
             )
         };
 
-        let rectangle = (0..16).map(|x| {
-            (0..16).map(move |z| {
-                (Vector3::new(x, 0, z), block::Block::Grass(block::Grass))
+        let rectangle = (0..16)
+            .map(|x| {
+                (0..16).map(move |z| (Vector3::new(x, 0, z), block::Block::Grass(block::Grass)))
             })
-        }).flatten().collect::<Vec<(Vector3<i32>, block::Block)>>();
+            .flatten()
+            .collect::<Vec<(Vector3<i32>, block::Block)>>();
 
         // Create array of chunks and fill them with blocks
         let chunks = {
@@ -193,14 +207,19 @@ impl State {
                 for y in (-1..=1).rev() {
                     let material = material::Material::new(
                         "Atlas Mat",
-                        texture::Texture::new(Path::new("sprite_atlas.png"), false, &renderer.device, &renderer.queue),
+                        texture::Texture::new(
+                            Path::new("sprite_atlas.png"),
+                            false,
+                            &renderer.device,
+                            &renderer.queue,
+                        ),
                         &renderer.device,
                         &texture_bind_group_layout,
                     );
 
                     chunks.push(
                         chunk::Chunk::new(Vector2::new(x, y), material, &renderer.device)
-                            .with_blocks(rectangle.clone(), &renderer.queue)
+                            .with_blocks(rectangle.clone(), &renderer.queue),
                     );
                 }
             }
@@ -239,10 +258,15 @@ impl State {
             self.renderer.config.width = new_size.width;
             self.renderer.config.height = new_size.height;
 
-            self.renderer.surface.configure(&self.renderer.device, &self.renderer.config);
+            self.renderer
+                .surface
+                .configure(&self.renderer.device, &self.renderer.config);
 
-            self.renderer.depth_texture =
-                texture::Texture::create_depth_texture(&self.renderer.device, &self.renderer.config, "depth texture");
+            self.renderer.depth_texture = texture::Texture::create_depth_texture(
+                &self.renderer.device,
+                &self.renderer.config,
+                "depth texture",
+            );
         }
     }
 
@@ -291,21 +315,28 @@ impl State {
         self.renderer.render(
             &self.render_pipeline,
             &self.camera_bind_group,
-            &self.chunks.iter().map(|chunk| {
-                &chunk.mesh
-            }).collect::<Vec<_>>()
+            &self
+                .chunks
+                .iter()
+                .map(|chunk| &chunk.mesh)
+                .collect::<Vec<_>>(),
         )?;
 
         Ok(())
     }
 
     #[allow(dead_code)]
-    fn render_gui(&mut self, view: &wgpu::TextureView, window: &Window) -> Result<(), wgpu::SurfaceError> {
-        let mut encoder = self
-            .renderer.device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            });
+    fn render_gui(
+        &mut self,
+        view: &wgpu::TextureView,
+        window: &Window,
+    ) -> Result<(), wgpu::SurfaceError> {
+        let mut encoder =
+            self.renderer
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Render Encoder"),
+                });
 
         self.platform
             .prepare_frame(self.imgui.io_mut(), window)
@@ -334,7 +365,10 @@ impl State {
                 ui.text("Debug Info");
                 bold.pop();
                 ui.separator();
-                ui.text(format!("FPS: {:?}", self.fps_counter.last_second_frames.len()));
+                ui.text(format!(
+                    "FPS: {:?}",
+                    self.fps_counter.last_second_frames.len()
+                ));
             });
 
         {
@@ -352,7 +386,12 @@ impl State {
             });
 
             self.gui_renderer
-                .render(ui.render(), &self.renderer.queue, &self.renderer.device, &mut render_pass)
+                .render(
+                    ui.render(),
+                    &self.renderer.queue,
+                    &self.renderer.device,
+                    &mut render_pass,
+                )
                 .expect("Rendering failed");
         }
 
@@ -434,6 +473,8 @@ pub async fn run() {
             _ => {}
         }
 
-        state.platform.handle_event(state.imgui.io_mut(), &window, &event);
+        state
+            .platform
+            .handle_event(state.imgui.io_mut(), &window, &event);
     });
 }

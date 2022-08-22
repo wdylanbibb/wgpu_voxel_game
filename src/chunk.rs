@@ -1,10 +1,12 @@
-use crate::{block, renderer};
-use crate::material::Material;
+use std::ops::Deref;
+
 use cgmath::{ElementWise, Vector2, Vector3};
 use ndarray::Array3;
-use std::ops::Deref;
 use wgpu::{BindGroup, RenderPass};
 use wgpu::util::DeviceExt;
+
+use crate::{block, renderer};
+use crate::material::Material;
 
 /*
        (-1, 1, -1) /-------------------| (1, 1, -1)
@@ -23,12 +25,17 @@ use wgpu::util::DeviceExt;
 
 #[derive(Debug)]
 pub enum Direction {
-    FRONT, // 0, 0, 1
-    BACK, // 0, 0, -1
-    TOP, // 0, 1, 0
-    BOTTOM, // 0, -1, 0
-    LEFT, // -1, 0, 0
-    RIGHT, // 1, 0, 0
+    FRONT,
+    // 0, 0, 1
+    BACK,
+    // 0, 0, -1
+    TOP,
+    // 0, 1, 0
+    BOTTOM,
+    // 0, -1, 0
+    LEFT,
+    // -1, 0, 0
+    RIGHT,  // 1, 0, 0
 }
 
 impl Direction {
@@ -182,13 +189,16 @@ impl ChunkMesh {
     fn flatten_3d(v: (i32, i32, i32)) -> u64 {
         // CHUNK_HEIGHT >> 1 is added to the y position to allow for y values of -127 to 128
         let (x, y, z) = v;
-        (x
-            + CHUNK_WIDTH as i32
-            * (y + (CHUNK_HEIGHT >> 1) as i32 + CHUNK_DEPTH as i32 * z))
-            as u64
+        (x + CHUNK_WIDTH as i32 * (y + (CHUNK_HEIGHT >> 1) as i32 + CHUNK_DEPTH as i32 * z)) as u64
     }
 
-    fn set_block(&self, chunk: &Chunk, chunk_position: Vector3<i32>, block: &block::Block, queue: &wgpu::Queue) {
+    fn set_block(
+        &self,
+        chunk: &Chunk,
+        chunk_position: Vector3<i32>,
+        block: &block::Block,
+        queue: &wgpu::Queue,
+    ) {
         let flattened = ChunkMesh::flatten_3d(chunk_position.into());
 
         if let block::Block::Air(_) = block {
@@ -221,10 +231,16 @@ impl ChunkMesh {
                             // The face is touching air: do nothing
                         } else {
                             // The face is touching a neighbor: put the block face back
-                            self.add_face(v, chunk.world_offset, &face.get_opposite(), &neighbor, queue);
+                            self.add_face(
+                                v,
+                                chunk.world_offset,
+                                &face.get_opposite(),
+                                &neighbor,
+                                queue,
+                            );
                         }
-                    },
-                    _ => () // The air block is on the edge of a chunk: do nothing
+                    }
+                    _ => (), // The air block is on the edge of a chunk: do nothing
                 }
             }
 
@@ -252,7 +268,7 @@ impl ChunkMesh {
                         self.remove_face(chunk_position, &face, queue);
                         chunk.mesh.remove_face(v, &face.get_opposite(), queue);
                     }
-                },
+                }
                 None => {
                     // The face is on the edge of a chunk
                     self.add_face(chunk_position, chunk.world_offset, &face, block, queue)
@@ -264,41 +280,49 @@ impl ChunkMesh {
     fn get_buf_offset(chunk_position: Vector3<i32>, face: &Direction) -> (u64, u64) {
         let flattened = ChunkMesh::flatten_3d(chunk_position.into());
 
-        let v_off =
-            flattened * std::mem::size_of::<ChunkVertex>() as u64 * 24 + face.index() as u64 * std::mem::size_of::<ChunkVertex>() as u64 * 4;
+        let v_off = flattened * std::mem::size_of::<ChunkVertex>() as u64 * 24
+            + face.index() as u64 * std::mem::size_of::<ChunkVertex>() as u64 * 4;
 
-        let i_off =
-            flattened * std::mem::size_of::<u32>() as u64 * 36 + face.index() as u64 * std::mem::size_of::<u32>() as u64 * 6;
+        let i_off = flattened * std::mem::size_of::<u32>() as u64 * 36
+            + face.index() as u64 * std::mem::size_of::<u32>() as u64 * 6;
 
         (v_off, i_off)
     }
 
-    fn add_face(&self, chunk_position: Vector3<i32>, world_offset: Vector2<i32>, face: &Direction, block: &block::Block, queue: &wgpu::Queue) {
+    fn add_face(
+        &self,
+        chunk_position: Vector3<i32>,
+        world_offset: Vector2<i32>,
+        face: &Direction,
+        block: &block::Block,
+        queue: &wgpu::Queue,
+    ) {
         let flattened = ChunkMesh::flatten_3d(chunk_position.into());
-        let world_offset = Vector3::new(world_offset.x as f32 * CHUNK_WIDTH as f32, 0.0, world_offset.y as f32 * CHUNK_DEPTH as f32);
+        let world_offset = Vector3::new(
+            world_offset.x as f32 * CHUNK_WIDTH as f32,
+            0.0,
+            world_offset.y as f32 * CHUNK_DEPTH as f32,
+        );
 
         let vertices = {
             let position = chunk_position.cast::<f32>().unwrap();
 
             face.cube_verts()
                 .iter()
-                .zip(&block.deref().texture_coordinates().to_vec()[(face.index() * 4) as usize..(face.index() * 4 + 4) as usize])
-                .map(|(p, t)| {
-                    ChunkVertex {
-                        position: *p + position + world_offset,
-                        tex_coord: *t,
-                    }
+                .zip(
+                    &block.deref().texture_coordinates().to_vec()
+                        [(face.index() * 4) as usize..(face.index() * 4 + 4) as usize],
+                )
+                .map(|(p, t)| ChunkVertex {
+                    position: *p + position + world_offset,
+                    tex_coord: *t,
                 })
                 .collect::<Vec<_>>()
         };
 
         let (v_off, i_off) = ChunkMesh::get_buf_offset(chunk_position, &face);
 
-        queue.write_buffer(
-            &self.vertex_buffer,
-            v_off,
-            bytemuck::cast_slice(&vertices),
-        );
+        queue.write_buffer(&self.vertex_buffer, v_off, bytemuck::cast_slice(&vertices));
 
         queue.write_buffer(
             &self.index_buffer,
@@ -338,14 +362,23 @@ pub struct Chunk {
 
 impl Chunk {
     pub fn new(world_offset: Vector2<i32>, material: Material, device: &wgpu::Device) -> Self {
-        let blocks = Array3::<block::Block>::from_shape_fn(CHUNK_DIMS, |_| block::Block::Air(block::Air));
+        let blocks =
+            Array3::<block::Block>::from_shape_fn(CHUNK_DIMS, |_| block::Block::Air(block::Air));
 
         let mesh = ChunkMesh::new(material, &device);
 
-        Self { blocks, world_offset, mesh }
+        Self {
+            blocks,
+            world_offset,
+            mesh,
+        }
     }
 
-    pub fn with_blocks(mut self, blocks: Vec<(Vector3<i32>, block::Block)>, queue: &wgpu::Queue) -> Self {
+    pub fn with_blocks(
+        mut self,
+        blocks: Vec<(Vector3<i32>, block::Block)>,
+        queue: &wgpu::Queue,
+    ) -> Self {
         for (position, block) in blocks {
             self.set_block(position, block, queue);
         }
@@ -354,12 +387,7 @@ impl Chunk {
     }
 
     pub fn set_block(&mut self, position: Vector3<i32>, block: block::Block, queue: &wgpu::Queue) {
-        self.mesh.set_block(
-            self,
-            position,
-            &block,
-            queue,
-        );
+        self.mesh.set_block(self, position, &block, queue);
 
         self.blocks[[
             position.x as usize,
@@ -371,7 +399,11 @@ impl Chunk {
     pub fn get_block(&self, mut position: Vector3<i32>) -> Option<&block::Block> {
         // let mut position: Option<Vector3<usize>> = position.cast();
         position.y = position.y + (CHUNK_HEIGHT >> 1) as i32;
-        self.blocks.get((position.x as usize, position.y as usize, position.z as usize))
+        self.blocks.get((
+            position.x as usize,
+            position.y as usize,
+            position.z as usize,
+        ))
     }
 }
 
