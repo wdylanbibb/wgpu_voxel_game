@@ -167,14 +167,14 @@ impl ChunkMesh {
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
             contents: bytemuck::cast_slice(
-                &[0 as u32; std::mem::size_of::<ChunkVertex>() * 24 * CHUNK_SIZE],
+                &[0u32; std::mem::size_of::<ChunkVertex>() * 24 * CHUNK_SIZE],
             ),
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
-            contents: bytemuck::cast_slice(&[0 as u32; 36 * CHUNK_SIZE]),
+            contents: bytemuck::cast_slice(&[0u32; 36 * CHUNK_SIZE]),
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -205,13 +205,13 @@ impl ChunkMesh {
             queue.write_buffer(
                 &self.vertex_buffer,
                 flattened * std::mem::size_of::<ChunkVertex>() as u64 * 24,
-                bytemuck::cast_slice(&[0 as u8; std::mem::size_of::<ChunkVertex>() * 24]),
+                bytemuck::cast_slice(&[0u8; std::mem::size_of::<ChunkVertex>() * 24]),
             );
 
             queue.write_buffer(
                 &self.index_buffer,
                 flattened * std::mem::size_of::<u32>() as u64 * 36,
-                bytemuck::cast_slice(&[0 as u32; 36]),
+                bytemuck::cast_slice(&[0u32; 36]),
             );
 
             for face in [
@@ -337,21 +337,21 @@ impl ChunkMesh {
         queue.write_buffer(
             &self.vertex_buffer,
             v_off,
-            bytemuck::cast_slice(&[0 as u8; std::mem::size_of::<ChunkVertex>() * 4]),
+            bytemuck::cast_slice(&[0u8; std::mem::size_of::<ChunkVertex>() * 4]),
         );
 
         queue.write_buffer(
             &self.index_buffer,
             i_off,
-            bytemuck::cast_slice(&[0 as u32; 6]),
+            bytemuck::cast_slice(&[0u32; 6]),
         );
     }
 }
 
-const CHUNK_DIMS: (usize, usize, usize) = (16, 256, 16);
-const CHUNK_WIDTH: usize = CHUNK_DIMS.0;
-const CHUNK_HEIGHT: usize = CHUNK_DIMS.1;
-const CHUNK_DEPTH: usize = CHUNK_DIMS.2;
+const CHUNK_WIDTH: usize = 16;
+const CHUNK_HEIGHT: usize = 256;
+const CHUNK_DEPTH: usize = 16;
+const CHUNK_DIMS: (usize, usize, usize) = (CHUNK_WIDTH, CHUNK_HEIGHT, CHUNK_DEPTH);
 const CHUNK_SIZE: usize = CHUNK_WIDTH * CHUNK_HEIGHT * CHUNK_DEPTH;
 
 pub struct Chunk {
