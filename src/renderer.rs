@@ -5,11 +5,11 @@ use std::iter;
 use std::time::{Duration, Instant};
 
 use bytemuck::{Pod, Zeroable};
-use cgmath::{Matrix4, SquareMatrix, Vector4};
+use cgmath::{Matrix4, SquareMatrix, Vector2, Vector4, Zero};
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
-use crate::camera;
+use crate::{camera, gui};
 use crate::texture::Texture;
 
 #[repr(C)]
@@ -44,6 +44,8 @@ pub struct Renderer {
     pub size: PhysicalSize<u32>,
 
     pub depth_texture: Texture,
+
+    pub fps_counter: FPSCounter,
 }
 
 impl Renderer {
@@ -87,6 +89,8 @@ impl Renderer {
 
         let depth_texture = Texture::create_depth_texture(&device, &config, "depth_texture");
 
+        let fps_counter = FPSCounter::new();
+
         Self {
             surface,
             device,
@@ -95,12 +99,16 @@ impl Renderer {
             size,
 
             depth_texture,
+
+            fps_counter,
         }
     }
 
     /// Renders the given objects using the supplied render pass, objects must have same uniform layout (subject to change)
     pub fn render<T: Draw>(
         &mut self,
+        window: &Window,
+        gui: &mut gui::Gui,
         render_pipeline: &wgpu::RenderPipeline,
         uniforms: &wgpu::BindGroup,
         objects: &[&T],
@@ -111,6 +119,16 @@ impl Renderer {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
+        self.render_objects(render_pipeline, uniforms, objects, &view)?;
+
+        self.render_gui(window, gui, &view)?;
+
+        output.present();
+
+        Ok(())
+    }
+
+    fn render_objects<T: Draw>(&mut self, render_pipeline: &wgpu::RenderPipeline, uniforms: &wgpu::BindGroup, objects: &[&T], view: &wgpu::TextureView) -> Result<(), wgpu::SurfaceError> {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -142,12 +160,78 @@ impl Renderer {
             for object in objects {
                 object.draw(&mut render_pass, uniforms);
             }
-            // render_pass.draw_chunk(&self.chunk, &self.camera_bind_group);
         }
 
         self.queue.submit(iter::once(encoder.finish()));
 
-        output.present();
+        Ok(())
+    }
+
+    fn render_gui(&mut self, window: &Window, gui: &mut gui::Gui, view: &wgpu::TextureView) -> Result<(), wgpu::SurfaceError> {
+        let mut encoder =
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Render Encoder"),
+                });
+
+        gui.platform
+            .prepare_frame(gui.imgui.io_mut(), window)
+            .expect("Failed to prepare frame");
+
+        let bold_font = gui.imgui.fonts().fonts()[1];
+
+        let ui: imgui::Ui = gui.imgui.frame();
+
+        gui.ui_focus = ui.io().want_capture_mouse;
+
+        if gui.last_cursor != ui.mouse_cursor() {
+            gui.last_cursor = ui.mouse_cursor();
+            gui.platform.prepare_render(&ui, window);
+        }
+
+        let _ = imgui::Window::new("Game Info")
+            .size(Vector2::zero().into(), imgui::Condition::FirstUseEver)
+            .position(Vector2::new(0.0, 0.0).into(), imgui::Condition::FirstUseEver)
+            .resizable(false)
+            // .movable(false)
+            .title_bar(false)
+            .always_auto_resize(true)
+            .build(&ui, || {
+                let bold = ui.push_font(bold_font);
+                ui.text("Debug Info");
+                bold.pop();
+                ui.separator();
+                ui.text(format!(
+                    "FPS: {:?}",
+                    self.fps_counter.last_second_frames.len()
+                ));
+            });
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None,
+            });
+
+            gui.gui_renderer
+                .render(
+                    ui.render(),
+                    &self.queue,
+                    &self.device,
+                    &mut render_pass,
+                )
+                .expect("Rendering failed");
+        }
+
+        self.queue.submit(iter::once(encoder.finish()));
 
         Ok(())
     }

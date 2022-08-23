@@ -15,6 +15,7 @@ use winit::{
 };
 
 use crate::chunk::Vertex;
+use crate::gui::Gui;
 use crate::renderer::Renderer;
 use crate::resources::get_bytes;
 
@@ -26,12 +27,11 @@ mod renderer;
 mod resources;
 mod texture;
 mod trait_enum;
+mod gui;
 
 struct State {
     renderer: Renderer,
-    imgui: imgui::Context,
-    platform: imgui_winit_support::WinitPlatform,
-    gui_renderer: imgui_wgpu::Renderer,
+    gui: Gui,
     camera: camera::Camera,
     projection: camera::Projection,
     camera_controller: camera::CameraController,
@@ -40,59 +40,14 @@ struct State {
     camera_bind_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
     chunks: Vec<chunk::Chunk>,
-    fps_counter: renderer::FPSCounter,
-    last_cursor: Option<MouseCursor>,
     mouse_pressed: bool,
-    ui_focus: bool,
 }
 
 impl State {
     async fn new(window: &Window) -> Self {
         let renderer = Renderer::new(window).await;
 
-        let hidpi_factor = window.scale_factor();
-
-        let mut imgui = imgui::Context::create();
-        let mut platform = imgui_winit_support::WinitPlatform::init(&mut imgui);
-        platform.attach_window(
-            imgui.io_mut(),
-            window,
-            imgui_winit_support::HiDpiMode::Default,
-        );
-        imgui.set_ini_filename(None);
-
-        let font_size = (16.0 * hidpi_factor) as f32;
-        imgui.io_mut().font_global_scale = (1.0 / hidpi_factor) as f32;
-
-        imgui.fonts().add_font(&[FontSource::TtfData {
-            data: &get_bytes("fonts/Silkscreen-Regular.ttf").unwrap(),
-            size_pixels: font_size,
-            config: Some(imgui::FontConfig {
-                size_pixels: font_size,
-                ..Default::default()
-            }),
-        }]);
-
-        imgui.fonts().add_font(&[FontSource::TtfData {
-            data: &get_bytes("fonts/Silkscreen-Bold.ttf").unwrap(),
-            size_pixels: font_size,
-            config: Some(imgui::FontConfig {
-                size_pixels: font_size,
-                ..Default::default()
-            }),
-        }]);
-
-        let renderer_config = RendererConfig {
-            texture_format: renderer.config.format,
-            ..Default::default()
-        };
-
-        let gui_renderer = imgui_wgpu::Renderer::new(
-            &mut imgui,
-            &renderer.device,
-            &renderer.queue,
-            renderer_config,
-        );
+        let gui = Gui::new(window, &renderer.config, &renderer.device, &renderer.queue);
 
         let texture_bind_group_layout =
             renderer
@@ -227,13 +182,9 @@ impl State {
             chunks
         };
 
-        let fps_counter = renderer::FPSCounter::new();
-
         Self {
             renderer,
-            imgui,
-            platform,
-            gui_renderer,
+            gui,
             camera,
             projection,
             camera_controller,
@@ -242,10 +193,7 @@ impl State {
             camera_bind_group,
             render_pipeline,
             chunks,
-            fps_counter,
-            last_cursor: None,
             mouse_pressed: false,
-            ui_focus: false,
         }
     }
 
@@ -308,11 +256,15 @@ impl State {
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
 
-        self.fps_counter.tick();
+        self.renderer.fps_counter.tick();
     }
 
-    fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+    fn render(&mut self, window: &Window) -> Result<(), wgpu::SurfaceError> {
+        // self.render_gui(window)?;
+
         self.renderer.render(
+            window,
+            &mut self.gui,
             &self.render_pipeline,
             &self.camera_bind_group,
             &self
@@ -321,81 +273,6 @@ impl State {
                 .map(|chunk| &chunk.mesh)
                 .collect::<Vec<_>>(),
         )?;
-
-        Ok(())
-    }
-
-    #[allow(dead_code)]
-    fn render_gui(
-        &mut self,
-        view: &wgpu::TextureView,
-        window: &Window,
-    ) -> Result<(), wgpu::SurfaceError> {
-        let mut encoder =
-            self.renderer
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Render Encoder"),
-                });
-
-        self.platform
-            .prepare_frame(self.imgui.io_mut(), window)
-            .expect("Failed to prepare frame");
-
-        let bold_font = self.imgui.fonts().fonts()[1];
-
-        let ui: imgui::Ui = self.imgui.frame();
-
-        self.ui_focus = ui.io().want_capture_mouse;
-
-        if self.last_cursor != ui.mouse_cursor() {
-            self.last_cursor = ui.mouse_cursor();
-            self.platform.prepare_render(&ui, window);
-        }
-
-        let _ = imgui::Window::new("Game Info")
-            .size(Vector2::zero().into(), Condition::FirstUseEver)
-            .position(Vector2::new(0.0, 0.0).into(), Condition::FirstUseEver)
-            .resizable(false)
-            // .movable(false)
-            .title_bar(false)
-            .always_auto_resize(true)
-            .build(&ui, || {
-                let bold = ui.push_font(bold_font);
-                ui.text("Debug Info");
-                bold.pop();
-                ui.separator();
-                ui.text(format!(
-                    "FPS: {:?}",
-                    self.fps_counter.last_second_frames.len()
-                ));
-            });
-
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: None,
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: true,
-                    },
-                })],
-                depth_stencil_attachment: None,
-            });
-
-            self.gui_renderer
-                .render(
-                    ui.render(),
-                    &self.renderer.queue,
-                    &self.renderer.device,
-                    &mut render_pass,
-                )
-                .expect("Rendering failed");
-        }
-
-        self.renderer.queue.submit(iter::once(encoder.finish()));
 
         Ok(())
     }
@@ -444,7 +321,7 @@ pub async fn run() {
                 event: DeviceEvent::MouseMotion { delta },
                 ..
             } => {
-                if state.mouse_pressed && !state.ui_focus {
+                if state.mouse_pressed && !state.gui.ui_focus {
                     state.camera_controller.process_mouse(delta.0, delta.1)
                 }
             }
@@ -453,10 +330,10 @@ pub async fn run() {
                 let dt = now - last_render_time;
                 last_render_time = now;
 
-                state.imgui.io_mut().update_delta_time(dt);
+                state.gui.imgui.io_mut().update_delta_time(dt);
 
                 state.update(dt.as_secs_f32());
-                match state.render() {
+                match state.render(&window) {
                     Ok(_) => {}
                     // Reconfigure the surface if lost
                     Err(wgpu::SurfaceError::Lost) => state.resize(state.renderer.size),
@@ -474,7 +351,7 @@ pub async fn run() {
         }
 
         state
-            .platform
-            .handle_event(state.imgui.io_mut(), &window, &event);
+            .gui.platform
+            .handle_event(state.gui.imgui.io_mut(), &window, &event);
     });
 }
