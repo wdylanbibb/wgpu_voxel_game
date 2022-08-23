@@ -105,14 +105,17 @@ impl Renderer {
     }
 
     /// Renders the given objects using the supplied render pass, objects must have same uniform layout (subject to change)
-    pub fn render<T: Draw>(
+    pub fn render<T, R, F>(
         &mut self,
         window: &Window,
         gui: &mut gui::Gui,
+        f: F,
         render_pipeline: &wgpu::RenderPipeline,
         uniforms: &wgpu::BindGroup,
         objects: &[&T],
-    ) -> Result<(), wgpu::SurfaceError> {
+    ) -> Result<Option<R>, wgpu::SurfaceError>
+        where T: Draw, F: FnOnce(&imgui::Ui) -> R
+    {
         let output = self.surface.get_current_texture()?;
 
         let view = output
@@ -121,11 +124,11 @@ impl Renderer {
 
         self.render_objects(render_pipeline, uniforms, objects, &view)?;
 
-        self.render_gui(window, gui, &view)?;
+        let result = self.render_gui(window, gui, f, &view)?;
 
         output.present();
 
-        Ok(())
+        Ok(result)
     }
 
     fn render_objects<T: Draw>(&mut self, render_pipeline: &wgpu::RenderPipeline, uniforms: &wgpu::BindGroup, objects: &[&T], view: &wgpu::TextureView) -> Result<(), wgpu::SurfaceError> {
@@ -167,7 +170,7 @@ impl Renderer {
         Ok(())
     }
 
-    fn render_gui(&mut self, window: &Window, gui: &mut gui::Gui, view: &wgpu::TextureView) -> Result<(), wgpu::SurfaceError> {
+    fn render_gui<R, F: FnOnce(&imgui::Ui) -> R>(&mut self, window: &Window, gui: &mut gui::Gui, f: F, view: &wgpu::TextureView) -> Result<Option<R>, wgpu::SurfaceError> {
         let mut encoder =
             self.device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -178,8 +181,6 @@ impl Renderer {
             .prepare_frame(gui.imgui.io_mut(), window)
             .expect("Failed to prepare frame");
 
-        let bold_font = gui.imgui.fonts().fonts()[1];
-
         let ui: imgui::Ui = gui.imgui.frame();
 
         gui.ui_focus = ui.io().want_capture_mouse;
@@ -189,7 +190,7 @@ impl Renderer {
             gui.platform.prepare_render(&ui, window);
         }
 
-        let _ = imgui::Window::new("Game Info")
+        let result = imgui::Window::new("Game Info")
             .size(Vector2::zero().into(), imgui::Condition::FirstUseEver)
             .position(Vector2::new(0.0, 0.0).into(), imgui::Condition::FirstUseEver)
             .resizable(false)
@@ -197,14 +198,7 @@ impl Renderer {
             .title_bar(false)
             .always_auto_resize(true)
             .build(&ui, || {
-                let bold = ui.push_font(bold_font);
-                ui.text("Debug Info");
-                bold.pop();
-                ui.separator();
-                ui.text(format!(
-                    "FPS: {:?}",
-                    self.fps_counter.last_second_frames.len()
-                ));
+                f(&ui)
             });
 
         {
@@ -233,7 +227,7 @@ impl Renderer {
 
         self.queue.submit(iter::once(encoder.finish()));
 
-        Ok(())
+        Ok(result)
     }
 }
 

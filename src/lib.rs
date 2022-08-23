@@ -1,11 +1,9 @@
 extern crate core;
 
-use std::iter;
+
 use std::path::Path;
 
-use cgmath::{Vector2, Vector3, Zero};
-use imgui::{Condition, FontSource, MouseCursor};
-use imgui_wgpu::RendererConfig;
+use cgmath::{Vector2, Vector3};
 use wgpu::util::DeviceExt;
 use winit::{
     dpi::PhysicalSize,
@@ -262,9 +260,22 @@ impl State {
     fn render(&mut self, window: &Window) -> Result<(), wgpu::SurfaceError> {
         // self.render_gui(window)?;
 
+        let fps = self.renderer.fps_counter.last_second_frames.len();
+        let bold_font = self.gui.imgui.fonts().fonts()[1];
+
         self.renderer.render(
             window,
             &mut self.gui,
+            |ui: &imgui::Ui| {
+                let bold = ui.push_font(bold_font);
+                ui.text("Debug Info");
+                bold.pop();
+                ui.separator();
+                ui.text(format!(
+                    "FPS: {:?}",
+                    fps
+                ));
+            },
             &self.render_pipeline,
             &self.camera_bind_group,
             &self
