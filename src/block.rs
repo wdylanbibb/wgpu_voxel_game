@@ -4,7 +4,6 @@ use cgmath::{ElementWise, Vector2};
 
 use crate::{chunk, trait_enum};
 
-#[derive(Debug)]
 pub struct TexCoordConfig {
     pub front: Vector2<f32>,
     pub back: Vector2<f32>,
@@ -15,24 +14,6 @@ pub struct TexCoordConfig {
 }
 
 impl TexCoordConfig {
-    // pub fn new(
-    //     top: Vector2<f32>,
-    //     bottom: Vector2<f32>,
-    //     left: Vector2<f32>,
-    //     right: Vector2<f32>,
-    //     front: Vector2<f32>,
-    //     back: Vector2<f32>,
-    // ) -> Self {
-    //     Self {
-    //         front,
-    //         back,
-    //         top,
-    //         bottom,
-    //         left,
-    //         right,
-    //     }
-    // }
-
     pub fn all_same(value: Vector2<f32>) -> Self {
         Self {
             front: value,
