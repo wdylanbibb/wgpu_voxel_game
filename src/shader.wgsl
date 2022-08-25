@@ -5,6 +5,9 @@ struct Camera {
 @group(1) @binding(0)
 var<uniform> camera: Camera;
 
+@group(2) @binding(0)
+var<uniform> chunk_offset: vec3<f32>;
+
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) tex_coord: vec2<f32>,
@@ -19,7 +22,7 @@ fn vs_main(
     model: VertexInput,
 ) -> VertexOutput {
 
-    let world_position =  vec4<f32>(model.position, 1.0);
+    let world_position =  vec4<f32>(model.position + chunk_offset, 1.0);
 
     var result: VertexOutput;
     result.clip_position = camera.view_proj * world_position;

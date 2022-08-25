@@ -1,6 +1,7 @@
 use std::ops::Deref;
 
-use cgmath::{ElementWise, Vector2, Vector3};
+use bytemuck::{Pod, Zeroable};
+use cgmath::{ElementWise, Vector2, Vector3, Zero};
 use ndarray::Array3;
 use wgpu::{BindGroup, RenderPass};
 use wgpu::util::DeviceExt;
@@ -152,6 +153,24 @@ impl Vertex for ChunkVertex {
     }
 }
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ChunkUniform {
+    pub chunk_offset: Vector3<f32>,
+}
+
+unsafe impl Pod for ChunkUniform {}
+
+unsafe impl Zeroable for ChunkUniform {}
+
+impl ChunkUniform {
+    pub fn new() -> Self {
+        Self {
+            chunk_offset: Vector3::zero(),
+        }
+    }
+}
+
 pub const ATLAS_SIZE: usize = 256;
 pub const TEXTURE_SIZE: usize = 16;
 
@@ -233,7 +252,6 @@ impl ChunkMesh {
                             // The face is touching a neighbor: put the block face back
                             self.add_face(
                                 v,
-                                chunk.world_offset,
                                 &face.get_opposite(),
                                 &neighbor,
                                 queue,
@@ -262,7 +280,7 @@ impl ChunkMesh {
                 Some(neighbor) => {
                     if let block::Block::Air(_) = neighbor {
                         // The face is touching air
-                        self.add_face(chunk_position, chunk.world_offset, &face, block, queue);
+                        self.add_face(chunk_position, &face, block, queue);
                     } else {
                         // The face is touching a neighbor
                         self.remove_face(chunk_position, &face, queue);
@@ -271,7 +289,7 @@ impl ChunkMesh {
                 }
                 None => {
                     // The face is on the edge of a chunk
-                    self.add_face(chunk_position, chunk.world_offset, &face, block, queue)
+                    self.add_face(chunk_position, &face, block, queue)
                 }
             }
         }
@@ -292,17 +310,11 @@ impl ChunkMesh {
     fn add_face(
         &self,
         chunk_position: Vector3<i32>,
-        world_offset: Vector2<i32>,
         face: &Direction,
         block: &block::Block,
         queue: &wgpu::Queue,
     ) {
         let flattened = ChunkMesh::flatten_3d(chunk_position.into());
-        let world_offset = Vector3::new(
-            world_offset.x as f32 * CHUNK_WIDTH as f32,
-            0.0,
-            world_offset.y as f32 * CHUNK_DEPTH as f32,
-        );
 
         let vertices = {
             let position = chunk_position.cast::<f32>().unwrap();
@@ -314,7 +326,7 @@ impl ChunkMesh {
                         [(face.index() * 4) as usize..(face.index() * 4 + 4) as usize],
                 )
                 .map(|(p, t)| ChunkVertex {
-                    position: *p + position + world_offset,
+                    position: *p + position,
                     tex_coord: *t,
                 })
                 .collect::<Vec<_>>()
@@ -408,11 +420,12 @@ impl Chunk {
 }
 
 impl renderer::Draw for ChunkMesh {
-    fn draw<'a>(&'a self, render_pass: &mut RenderPass<'a>, uniforms: &'a BindGroup) {
+    fn draw<'a>(&'a self, render_pass: &mut RenderPass<'a>, camera_bind_group: &'a BindGroup, uniforms: &'a BindGroup) {
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         render_pass.set_bind_group(0, &self.material.bind_group, &[]);
-        render_pass.set_bind_group(1, uniforms, &[]);
+        render_pass.set_bind_group(1, camera_bind_group, &[]);
+        render_pass.set_bind_group(2, uniforms, &[]);
         render_pass.draw_indexed(0..self.num_elements, 0, 0..1);
     }
 }

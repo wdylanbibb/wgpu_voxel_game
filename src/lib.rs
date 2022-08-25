@@ -32,18 +32,24 @@ struct State {
     gui: Gui,
     camera: camera::Camera,
     projection: camera::Projection,
+
     camera_controller: camera::CameraController,
     camera_uniform: renderer::CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+
+    chunk_uniform: chunk::ChunkUniform,
+    chunk_uniform_buffer: wgpu::Buffer,
+    chunk_uniform_bind_group: wgpu::BindGroup,
+
     render_pipeline: wgpu::RenderPipeline,
     chunks: Vec<chunk::Chunk>,
     mouse_pressed: bool,
 }
 
 impl State {
-    async fn new(window: &Window) -> Self {
-        let renderer = Renderer::new(window).await;
+    fn new(window: &Window) -> Self {
+        let renderer = Renderer::new(window);
 
         let gui = Gui::new(window, &renderer.config, &renderer.device, &renderer.queue);
 
@@ -121,11 +127,48 @@ impl State {
                 label: Some("camera bind group"),
             });
 
+        let chunk_uniform = chunk::ChunkUniform::new();
+
+        let chunk_uniform_buffer = renderer
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Chunk Uniform Buffer"),
+                contents: bytemuck::cast_slice(&[chunk_uniform]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+
+        let chunk_bind_group_layout = renderer.device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("chunk uniform bind group layout"),
+            }
+        );
+
+        let chunk_uniform_bind_group = renderer.device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                layout: &chunk_bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: chunk_uniform_buffer.as_entire_binding(),
+                }],
+                label: Some("chunk uniform bind group"),
+            }
+        );
+
         let render_pipeline_layout =
             renderer
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout],
+                    bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout, &chunk_bind_group_layout],
                     push_constant_ranges: &[],
                     label: Some("render pipeline layout"),
                 });
@@ -171,6 +214,8 @@ impl State {
                     );
 
                     chunks.push(
+                        // Currently no way to update buffer between chunk renders, so all chunks
+                        // are drawn over each other
                         chunk::Chunk::new(Vector2::new(x, y), material, &renderer.device)
                             .with_blocks(rectangle.clone(), &renderer.queue),
                     );
@@ -189,6 +234,9 @@ impl State {
             camera_uniform,
             camera_buffer,
             camera_bind_group,
+            chunk_uniform,
+            chunk_uniform_buffer,
+            chunk_uniform_bind_group,
             render_pipeline,
             chunks,
             mouse_pressed: false,
@@ -258,8 +306,6 @@ impl State {
     }
 
     fn render(&mut self, window: &Window) -> Result<(), wgpu::SurfaceError> {
-        // self.render_gui(window)?;
-
         let fps = self.renderer.fps_counter.last_second_frames.len();
         let bold_font = self.gui.imgui.fonts().fonts()[1];
 
@@ -281,7 +327,7 @@ impl State {
             &self
                 .chunks
                 .iter()
-                .map(|chunk| &chunk.mesh)
+                .map(|chunk| (&chunk.mesh, &self.chunk_uniform_bind_group))
                 .collect::<Vec<_>>(),
         )?;
 
@@ -289,7 +335,7 @@ impl State {
     }
 }
 
-pub async fn run() {
+pub fn run() {
     env_logger::init();
 
     let event_loop = EventLoop::new();
@@ -298,13 +344,14 @@ pub async fn run() {
         .with_inner_size(PhysicalSize::new(1280, 720))
         .build(&event_loop)
         .unwrap();
-
-    // State::new uses async code, so we're going to wait for it to finish
-    let mut state = State::new(&window).await;
+    let mut state = State::new(&window);
 
     let mut last_render_time = instant::Instant::now();
 
     event_loop.run(move |event, _, control_flow| {
+        state
+            .gui.platform
+            .handle_event(state.gui.imgui.io_mut(), &window, &event);
         match event {
             Event::WindowEvent {
                 ref event,
@@ -361,8 +408,5 @@ pub async fn run() {
             _ => {}
         }
 
-        state
-            .gui.platform
-            .handle_event(state.gui.imgui.io_mut(), &window, &event);
     });
 }

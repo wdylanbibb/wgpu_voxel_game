@@ -49,23 +49,22 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub async fn new(window: &Window) -> Self {
+    pub fn new(window: &Window) -> Self {
         let size = window.inner_size();
 
         // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
         let instance = wgpu::Instance::new(wgpu::Backends::all());
         let surface = unsafe { instance.create_surface(window) };
-        let adapter = instance
+        let adapter = pollster::block_on(instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
-            })
-            .await
+            }))
             .unwrap();
 
-        let (device, queue) = adapter
+        let (device, queue) = pollster::block_on(adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
@@ -74,8 +73,7 @@ impl Renderer {
                 },
                 // Some(&std::path::Path::new("trace")), // Trace path
                 None,
-            )
-            .await
+            ))
             .unwrap();
 
         let config = wgpu::SurfaceConfiguration {
@@ -111,8 +109,8 @@ impl Renderer {
         gui: &mut gui::Gui,
         f: F,
         render_pipeline: &wgpu::RenderPipeline,
-        uniforms: &wgpu::BindGroup,
-        objects: &[&T],
+        camera_bind_group: &wgpu::BindGroup,
+        objects: &[(&T, &wgpu::BindGroup)],
     ) -> Result<Option<R>, wgpu::SurfaceError>
         where T: Draw, F: FnOnce(&imgui::Ui) -> R
     {
@@ -122,7 +120,7 @@ impl Renderer {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        self.render_objects(render_pipeline, uniforms, objects, &view)?;
+        self.render_objects(render_pipeline, camera_bind_group, objects, &view)?;
 
         let result = self.render_gui(window, gui, f, &view)?;
 
@@ -131,7 +129,7 @@ impl Renderer {
         Ok(result)
     }
 
-    fn render_objects<T: Draw>(&mut self, render_pipeline: &wgpu::RenderPipeline, uniforms: &wgpu::BindGroup, objects: &[&T], view: &wgpu::TextureView) -> Result<(), wgpu::SurfaceError> {
+    pub fn render_objects<T: Draw>(&mut self, render_pipeline: &wgpu::RenderPipeline, camera_bind_group: &wgpu::BindGroup, objects: &[(&T, &wgpu::BindGroup)], view: &wgpu::TextureView) -> Result<(), wgpu::SurfaceError> {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -145,7 +143,12 @@ impl Renderer {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.1,
+                            g: 0.2,
+                            b: 0.3,
+                            a: 1.0,
+                        }),
                         store: true,
                     },
                 })],
@@ -160,8 +163,8 @@ impl Renderer {
             });
             render_pass.set_pipeline(render_pipeline);
 
-            for object in objects {
-                object.draw(&mut render_pass, uniforms);
+            for (object, uniforms) in objects {
+                object.draw(&mut render_pass, camera_bind_group, uniforms);
             }
         }
 
@@ -232,7 +235,7 @@ impl Renderer {
 }
 
 pub trait Draw {
-    fn draw<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>, uniforms: &'a wgpu::BindGroup);
+    fn draw<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>, camera_bind_group: &'a wgpu::BindGroup, uniforms: &'a wgpu::BindGroup);
 }
 
 #[derive(Debug)]
