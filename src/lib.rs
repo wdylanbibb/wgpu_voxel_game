@@ -12,8 +12,10 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-use crate::chunk::Vertex;
+use crate::block::Block;
+use crate::chunk::{Chunk, Vertex};
 use crate::gui::Gui;
+use crate::material::Material;
 use crate::renderer::Renderer;
 use crate::resources::get_bytes;
 
@@ -43,7 +45,7 @@ struct State {
     chunk_uniform_bind_group: wgpu::BindGroup,
 
     render_pipeline: wgpu::RenderPipeline,
-    chunks: Vec<chunk::Chunk>,
+    chunks: Vec<Chunk>,
     mouse_pressed: bool,
 }
 
@@ -190,10 +192,10 @@ impl State {
 
         let rectangle = (0..16)
             .map(|x| {
-                (0..16).map(move |z| (Vector3::new(x, 0, z), block::Block::Grass(block::Grass)))
+                (0..16).map(move |z| (Vector3::new(x, 0, z), Block::grass()))
             })
             .flatten()
-            .collect::<Vec<(Vector3<i32>, block::Block)>>();
+            .collect::<Vec<(Vector3<i32>, Block)>>();
 
         // Create array of chunks and fill them with blocks
         let chunks = {
@@ -201,7 +203,7 @@ impl State {
 
             for x in (-1..=1).rev() {
                 for y in (-1..=1).rev() {
-                    let material = material::Material::new(
+                    let material = Material::new(
                         "Atlas Mat",
                         texture::Texture::new(
                             Path::new("sprite_atlas.png"),
@@ -216,7 +218,7 @@ impl State {
                     chunks.push(
                         // Currently no way to update buffer between chunk renders, so all chunks
                         // are drawn over each other
-                        chunk::Chunk::new(Vector2::new(x, y), material, &renderer.device)
+                        Chunk::new(Vector2::new(x, y), material, &renderer.device)
                             .with_blocks(rectangle.clone(), &renderer.queue),
                     );
                 }
@@ -407,6 +409,5 @@ pub fn run() {
             }
             _ => {}
         }
-
     });
 }

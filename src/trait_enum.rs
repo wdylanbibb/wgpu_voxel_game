@@ -70,24 +70,23 @@ macro_rules! trait_enum {
                 $name($name),
             )*
         }
-        // paste::paste! {
-        //     impl $enum_name {
-        //         $(
-        //             $vis fn [<$name:lower>]() -> Self {
-        //                 $enum_name::$name($name)
-        //             }
-        //
-        //             $vis fn [<as_ $name:lower>](&self) -> Option<&$name> {
-        //                 match self {
-        //                     $enum_name::$name(v) => Some(&v),
-        //                     _ => None,
-        //                 }
-        //             }
-        //         )*
-        //     }
-        // }
+        paste::paste! {
+            impl $enum_name {
+                $(
+                    $vis fn [<$name:lower>]() -> Self {
+                        $enum_name::$name($name)
+                    }
 
-
+                    // Not needed because of get_inner<T>()
+                    // $vis fn [<as_ $name:lower>](&self) -> Option<&$name> {
+                    //     match self {
+                    //         $enum_name::$name(v) => Some(&v),
+                    //         _ => None,
+                    //     }
+                    // }
+                )*
+            }
+        }
     };
 
     // Creates an enum containing structs that all have a certain
@@ -105,6 +104,7 @@ macro_rules! trait_enum {
     )=>{
         pub trait WithAny: $trait {
             fn as_any(&self) -> &dyn std::any::Any;
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
         }
 
         trait_enum! (
@@ -124,15 +124,24 @@ macro_rules! trait_enum {
                 fn as_any(&self) -> &dyn std::any::Any {
                     self
                 }
+
+                fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                    self
+                }
             }
         )*
 
-        #[allow(dead_code)]
         impl $enum_name {
             $vis fn get_inner<T>(&self) -> Option<&T>
                 where T: WithAny + 'static
             {
                 self.deref().as_any().downcast_ref::<T>()
+            }
+
+            $vis fn get_inner_mut<T>(&mut self) -> Option<&mut T>
+                where T: WithAny + 'static
+            {
+                self.deref_mut().as_any_mut().downcast_mut::<T>()
             }
         }
 

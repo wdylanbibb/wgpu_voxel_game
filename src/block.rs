@@ -1,4 +1,4 @@
-use std::ops::{Deref, Div, Mul};
+use std::ops::{Deref, DerefMut, Div, Mul};
 
 use cgmath::{ElementWise, Vector2};
 
