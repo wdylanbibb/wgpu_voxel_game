@@ -1,10 +1,11 @@
 extern crate core;
 
 
+use std::mem;
 use std::path::Path;
 
 use cgmath::{Vector2, Vector3};
-use wgpu::util::DeviceExt;
+use wgpu::util::{align_to, DeviceExt};
 use winit::{
     dpi::PhysicalSize,
     event::*,
@@ -13,7 +14,7 @@ use winit::{
 };
 
 use crate::block::Block;
-use crate::chunk::{Chunk, Vertex};
+use crate::chunk::{Chunk, CHUNK_DEPTH, CHUNK_WIDTH, ChunkUniform, Vertex};
 use crate::gui::Gui;
 use crate::material::Material;
 use crate::renderer::Renderer;
@@ -54,31 +55,6 @@ impl State {
         let renderer = Renderer::new(window);
 
         let gui = Gui::new(window, &renderer.config, &renderer.device, &renderer.queue);
-
-        let texture_bind_group_layout =
-            renderer
-                .device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    entries: &[
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                multisampled: false,
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                            count: None,
-                        },
-                    ],
-                    label: Some("texture bind group layout"),
-                });
 
         let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
         let projection = camera::Projection::new(
@@ -129,48 +105,80 @@ impl State {
                 label: Some("camera bind group"),
             });
 
-        let chunk_uniform = chunk::ChunkUniform::new();
-
-        let chunk_uniform_buffer = renderer
+        let texture_bind_group_layout = renderer
             .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Chunk Uniform Buffer"),
-                contents: bytemuck::cast_slice(&[chunk_uniform]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+                label: Some("texture bind group layout"),
             });
 
-        let chunk_bind_group_layout = renderer.device.create_bind_group_layout(
-            &wgpu::BindGroupLayoutDescriptor {
+        let chunk_uniform_size = mem::size_of::<ChunkUniform>() as wgpu::BufferAddress;
+        let num_chunks = 16 as wgpu::BufferAddress;
+        // Make the `uniform_alignment` >= `chunk_uniform_size` and aligned to `min_uniform_buffer_offset_alignment`
+        let uniform_alignment = {
+            let alignment = renderer
+                .device
+                .limits()
+                .min_uniform_buffer_offset_alignment as wgpu::BufferAddress;
+            align_to(chunk_uniform_size, alignment)
+        };
+        // Note: dynamic uniform offsets also have to be aligned to `Limits::min_uniform_buffer_offset_alignment`.
+        let chunk_uniform_buffer = renderer.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: num_chunks * uniform_alignment,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let local_bind_group_layout = renderer.device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                        has_dynamic_offset: true,
+                        min_binding_size: wgpu::BufferSize::new(chunk_uniform_size),
                     },
                     count: None,
                 }],
-                label: Some("chunk uniform bind group layout"),
-            }
-        );
-
-        let chunk_uniform_bind_group = renderer.device.create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                layout: &chunk_bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: chunk_uniform_buffer.as_entire_binding(),
-                }],
-                label: Some("chunk uniform bind group"),
-            }
-        );
+                label: None,
+            });
+        let chunk_uniform_bind_group = renderer.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &local_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &chunk_uniform_buffer,
+                    offset: 0,
+                    size: wgpu::BufferSize::new(chunk_uniform_size),
+                }),
+            }],
+            label: None,
+        });
 
         let render_pipeline_layout =
             renderer
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout, &chunk_bind_group_layout],
+                    bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout, &local_bind_group_layout],
                     push_constant_ranges: &[],
                     label: Some("render pipeline layout"),
                 });
@@ -201,8 +209,8 @@ impl State {
         let chunks = {
             let mut chunks = Vec::new();
 
-            for x in (-1..=1).rev() {
-                for y in (-1..=1).rev() {
+            for x in -1..=1 {
+                for y in -1..=1 {
                     let material = Material::new(
                         "Atlas Mat",
                         texture::Texture::new(
@@ -218,7 +226,7 @@ impl State {
                     chunks.push(
                         // Currently no way to update buffer between chunk renders, so all chunks
                         // are drawn over each other
-                        Chunk::new(Vector2::new(x, y), material, &renderer.device)
+                        Chunk::new(Vector2::new(x, y), material, (((3 * x + y) + 4) as u64 * uniform_alignment) as _, &renderer.device)
                             .with_blocks(rectangle.clone(), &renderer.queue),
                     );
                 }
@@ -236,7 +244,6 @@ impl State {
             camera_uniform,
             camera_buffer,
             camera_bind_group,
-            chunk_uniform,
             chunk_uniform_buffer,
             chunk_uniform_bind_group,
             render_pipeline,
@@ -307,23 +314,28 @@ impl State {
         self.renderer.fps_counter.tick();
     }
 
-    fn render(&mut self, window: &Window) -> Result<(), wgpu::SurfaceError> {
-        let fps = self.renderer.fps_counter.last_second_frames.len();
-        let bold_font = self.gui.imgui.fonts().fonts()[1];
+    fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        // let fps = self.renderer.fps_counter.last_second_frames.len();
+        // let bold_font = self.gui.imgui.fonts().fonts()[1];
+
+        // update uniforms
+        for chunk in self.chunks.iter() {
+            let data = ChunkUniform::new(
+                Vector3::new(
+                    (chunk.world_offset.x * CHUNK_WIDTH as i32) as f32,
+                    0.0,
+                    (chunk.world_offset.y * CHUNK_DEPTH as i32) as f32,
+                ),
+            );
+
+            self.renderer.queue.write_buffer(
+                &self.chunk_uniform_buffer,
+                chunk.mesh.uniform_offset as wgpu::BufferAddress,
+                bytemuck::bytes_of(&data),
+            );
+        }
 
         self.renderer.render(
-            window,
-            &mut self.gui,
-            |ui: &imgui::Ui| {
-                let bold = ui.push_font(bold_font);
-                ui.text("Debug Info");
-                bold.pop();
-                ui.separator();
-                ui.text(format!(
-                    "FPS: {:?}",
-                    fps
-                ));
-            },
             &self.render_pipeline,
             &self.camera_bind_group,
             &self
@@ -393,7 +405,7 @@ pub fn run() {
                 state.gui.imgui.io_mut().update_delta_time(dt);
 
                 state.update(dt.as_secs_f32());
-                match state.render(&window) {
+                match state.render() {
                     Ok(_) => {}
                     // Reconfigure the surface if lost
                     Err(wgpu::SurfaceError::Lost) => state.resize(state.renderer.size),

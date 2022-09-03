@@ -103,16 +103,13 @@ impl Renderer {
     }
 
     /// Renders the given objects using the supplied render pass, objects must have same uniform layout (subject to change)
-    pub fn render<T, R, F>(
+    pub fn render<T>(
         &mut self,
-        window: &Window,
-        gui: &mut gui::Gui,
-        f: F,
         render_pipeline: &wgpu::RenderPipeline,
         camera_bind_group: &wgpu::BindGroup,
         objects: &[(&T, &wgpu::BindGroup)],
-    ) -> Result<Option<R>, wgpu::SurfaceError>
-        where T: Draw, F: FnOnce(&imgui::Ui) -> R
+    ) -> Result<(), wgpu::SurfaceError>
+        where T: Draw
     {
         let output = self.surface.get_current_texture()?;
 
@@ -122,11 +119,9 @@ impl Renderer {
 
         self.render_objects(render_pipeline, camera_bind_group, objects, &view)?;
 
-        let result = self.render_gui(window, gui, f, &view)?;
-
         output.present();
 
-        Ok(result)
+        Ok(())
     }
 
     pub fn render_objects<T: Draw>(&mut self, render_pipeline: &wgpu::RenderPipeline, camera_bind_group: &wgpu::BindGroup, objects: &[(&T, &wgpu::BindGroup)], view: &wgpu::TextureView) -> Result<(), wgpu::SurfaceError> {

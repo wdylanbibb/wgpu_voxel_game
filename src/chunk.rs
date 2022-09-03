@@ -1,9 +1,9 @@
 use std::ops::Deref;
 
 use bytemuck::{Pod, Zeroable};
-use cgmath::{ElementWise, Vector2, Vector3, Zero};
+use cgmath::{ElementWise, Vector2, Vector3};
 use ndarray::Array3;
-use wgpu::{BindGroup, RenderPass};
+use wgpu::{BindGroup, DynamicOffset, RenderPass};
 use wgpu::util::DeviceExt;
 
 use crate::{block, renderer};
@@ -157,19 +157,21 @@ impl Vertex for ChunkVertex {
 #[derive(Debug, Copy, Clone)]
 pub struct ChunkUniform {
     pub chunk_offset: Vector3<f32>,
+    _padding: u32,
+}
+
+impl ChunkUniform {
+    pub fn new(chunk_offset: Vector3<f32>) -> Self {
+        Self {
+            chunk_offset,
+            _padding: 0,
+        }
+    }
 }
 
 unsafe impl Pod for ChunkUniform {}
 
 unsafe impl Zeroable for ChunkUniform {}
-
-impl ChunkUniform {
-    pub fn new() -> Self {
-        Self {
-            chunk_offset: Vector3::zero(),
-        }
-    }
-}
 
 pub const ATLAS_SIZE: usize = 256;
 pub const TEXTURE_SIZE: usize = 16;
@@ -178,11 +180,12 @@ pub struct ChunkMesh {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_elements: u32,
+    pub uniform_offset: DynamicOffset,
     material: Material,
 }
 
 impl ChunkMesh {
-    fn new(material: Material, device: &wgpu::Device) -> Self {
+    fn new(material: Material, uniform_offset: DynamicOffset, device: &wgpu::Device) -> Self {
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
             contents: bytemuck::cast_slice(
@@ -201,6 +204,7 @@ impl ChunkMesh {
             vertex_buffer,
             index_buffer,
             num_elements: 36 * CHUNK_SIZE as u32,
+            uniform_offset,
             material,
         }
     }
@@ -360,11 +364,11 @@ impl ChunkMesh {
     }
 }
 
-const CHUNK_WIDTH: usize = 16;
-const CHUNK_HEIGHT: usize = 256;
-const CHUNK_DEPTH: usize = 16;
-const CHUNK_DIMS: (usize, usize, usize) = (CHUNK_WIDTH, CHUNK_HEIGHT, CHUNK_DEPTH);
-const CHUNK_SIZE: usize = CHUNK_WIDTH * CHUNK_HEIGHT * CHUNK_DEPTH;
+pub const CHUNK_WIDTH: usize = 16;
+pub const CHUNK_HEIGHT: usize = 256;
+pub const CHUNK_DEPTH: usize = 16;
+pub const CHUNK_DIMS: (usize, usize, usize) = (CHUNK_WIDTH, CHUNK_HEIGHT, CHUNK_DEPTH);
+pub const CHUNK_SIZE: usize = CHUNK_WIDTH * CHUNK_HEIGHT * CHUNK_DEPTH;
 
 pub struct Chunk {
     pub blocks: Array3<block::Block>,
@@ -373,11 +377,11 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    pub fn new(world_offset: Vector2<i32>, material: Material, device: &wgpu::Device) -> Self {
+    pub fn new(world_offset: Vector2<i32>, material: Material, uniform_offset: DynamicOffset, device: &wgpu::Device) -> Self {
         let blocks =
             Array3::<block::Block>::from_shape_fn(CHUNK_DIMS, |_| block::Block::Air(block::Air));
 
-        let mesh = ChunkMesh::new(material, &device);
+        let mesh = ChunkMesh::new(material, uniform_offset, &device);
 
         Self {
             blocks,
@@ -425,7 +429,7 @@ impl renderer::Draw for ChunkMesh {
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         render_pass.set_bind_group(0, &self.material.bind_group, &[]);
         render_pass.set_bind_group(1, camera_bind_group, &[]);
-        render_pass.set_bind_group(2, uniforms, &[]);
+        render_pass.set_bind_group(2, uniforms, &[self.uniform_offset]);
         render_pass.draw_indexed(0..self.num_elements, 0, 0..1);
     }
 }
