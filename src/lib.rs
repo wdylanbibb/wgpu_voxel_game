@@ -16,7 +16,6 @@ use winit::{
 use crate::block::Block;
 use crate::chunk::{Chunk, CHUNK_DEPTH, CHUNK_WIDTH, ChunkUniform, Vertex};
 use crate::gui::Gui;
-use crate::material::Material;
 use crate::renderer::Renderer;
 use crate::resources::get_bytes;
 
@@ -148,28 +147,64 @@ impl State {
 
         let local_bind_group_layout = renderer.device
             .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: true,
-                        min_binding_size: wgpu::BufferSize::new(chunk_uniform_size),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
                     },
-                    count: None,
-                }],
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: true,
+                            min_binding_size: wgpu::BufferSize::new(chunk_uniform_size),
+                        },
+                        count: None,
+                    },
+                ],
                 label: None,
             });
+
+        let diffuse_texture = texture::Texture::new(
+            Path::new("sprite_atlas.png"),
+            false,
+            &renderer.device,
+            &renderer.queue,
+        );
+
         let chunk_uniform_bind_group = renderer.device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &local_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &chunk_uniform_buffer,
-                    offset: 0,
-                    size: wgpu::BufferSize::new(chunk_uniform_size),
-                }),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &chunk_uniform_buffer,
+                        offset: 0,
+                        size: wgpu::BufferSize::new(chunk_uniform_size),
+                    }),
+                },
+            ],
             label: None,
         });
 
@@ -177,7 +212,7 @@ impl State {
             renderer
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout, &local_bind_group_layout],
+                    bind_group_layouts: &[&camera_bind_group_layout, &local_bind_group_layout],
                     push_constant_ranges: &[],
                     label: Some("render pipeline layout"),
                 });
@@ -210,22 +245,10 @@ impl State {
 
             for x in -1..=1 {
                 for y in -1..=1 {
-                    let material = Material::new(
-                        "Atlas Mat",
-                        texture::Texture::new(
-                            Path::new("sprite_atlas.png"),
-                            false,
-                            &renderer.device,
-                            &renderer.queue,
-                        ),
-                        &renderer.device,
-                        &texture_bind_group_layout,
-                    );
-
                     chunks.push(
                         // Currently no way to update buffer between chunk renders, so all chunks
                         // are drawn over each other
-                        Chunk::new(Vector2::new(x, y), material, (((3 * x + y) + 4) as u64 * uniform_alignment) as _, &renderer.device)
+                        Chunk::new(Vector2::new(x, y), (((3 * x + y) + 4) as u64 * uniform_alignment) as _, &renderer.device)
                             .with_blocks(rectangle.clone(), &renderer.queue),
                     );
                 }

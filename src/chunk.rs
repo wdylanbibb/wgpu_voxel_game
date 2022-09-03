@@ -7,7 +7,6 @@ use wgpu::{BindGroup, DynamicOffset, RenderPass};
 use wgpu::util::DeviceExt;
 
 use crate::{block, renderer};
-use crate::material::Material;
 
 /*
        (-1, 1, -1) /-------------------| (1, 1, -1)
@@ -181,11 +180,10 @@ pub struct ChunkMesh {
     index_buffer: wgpu::Buffer,
     num_elements: u32,
     pub uniform_offset: DynamicOffset,
-    material: Material,
 }
 
 impl ChunkMesh {
-    fn new(material: Material, uniform_offset: DynamicOffset, device: &wgpu::Device) -> Self {
+    fn new(uniform_offset: DynamicOffset, device: &wgpu::Device) -> Self {
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
             contents: bytemuck::cast_slice(
@@ -205,7 +203,6 @@ impl ChunkMesh {
             index_buffer,
             num_elements: 36 * CHUNK_SIZE as u32,
             uniform_offset,
-            material,
         }
     }
 
@@ -377,11 +374,11 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    pub fn new(world_offset: Vector2<i32>, material: Material, uniform_offset: DynamicOffset, device: &wgpu::Device) -> Self {
+    pub fn new(world_offset: Vector2<i32>, uniform_offset: DynamicOffset, device: &wgpu::Device) -> Self {
         let blocks =
             Array3::<block::Block>::from_shape_fn(CHUNK_DIMS, |_| block::Block::Air(block::Air));
 
-        let mesh = ChunkMesh::new(material, uniform_offset, &device);
+        let mesh = ChunkMesh::new(uniform_offset, &device);
 
         Self {
             blocks,
@@ -427,29 +424,8 @@ impl renderer::Draw for ChunkMesh {
     fn draw<'a>(&'a self, render_pass: &mut RenderPass<'a>, camera_bind_group: &'a BindGroup, uniforms: &'a BindGroup) {
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        render_pass.set_bind_group(0, &self.material.bind_group, &[]);
-        render_pass.set_bind_group(1, camera_bind_group, &[]);
-        render_pass.set_bind_group(2, uniforms, &[self.uniform_offset]);
+        render_pass.set_bind_group(0, camera_bind_group, &[]);
+        render_pass.set_bind_group(1, uniforms, &[self.uniform_offset]);
         render_pass.draw_indexed(0..self.num_elements, 0, 0..1);
     }
 }
-
-// pub trait DrawChunk<'a> {
-//     fn draw_chunk(&mut self, chunk: &'a Chunk, camera_bind_group: &'a wgpu::BindGroup);
-// }
-//
-// impl<'a, 'b> DrawChunk<'b> for wgpu::RenderPass<'a>
-// where
-//     'b: 'a,
-// {
-//     fn draw_chunk(&mut self, chunk: &'b Chunk, camera_bind_group: &'b wgpu::BindGroup) {
-//         self.push_debug_group("Prepare chunk data for draw");
-//         self.set_vertex_buffer(0, chunk.mesh.vertex_buffer.slice(..));
-//         self.set_index_buffer(chunk.mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-//         self.set_bind_group(0, &chunk.mesh.material.bind_group, &[]);
-//         self.set_bind_group(1, camera_bind_group, &[]);
-//         self.pop_debug_group();
-//         self.insert_debug_marker("Draw!");
-//         self.draw_indexed(0..chunk.mesh.num_elements, 0, 0..1);
-//     }
-// }

@@ -5,11 +5,11 @@ use std::iter;
 use std::time::{Duration, Instant};
 
 use bytemuck::{Pod, Zeroable};
-use cgmath::{Matrix4, SquareMatrix, Vector2, Vector4, Zero};
+use cgmath::{Matrix4, SquareMatrix, Vector4};
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
-use crate::{camera, gui};
+use crate::camera;
 use crate::texture::Texture;
 
 #[repr(C)]
@@ -166,66 +166,6 @@ impl Renderer {
         self.queue.submit(iter::once(encoder.finish()));
 
         Ok(())
-    }
-
-    fn render_gui<R, F: FnOnce(&imgui::Ui) -> R>(&mut self, window: &Window, gui: &mut gui::Gui, f: F, view: &wgpu::TextureView) -> Result<Option<R>, wgpu::SurfaceError> {
-        let mut encoder =
-            self.device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Render Encoder"),
-                });
-
-        gui.platform
-            .prepare_frame(gui.imgui.io_mut(), window)
-            .expect("Failed to prepare frame");
-
-        let ui: imgui::Ui = gui.imgui.frame();
-
-        gui.ui_focus = ui.io().want_capture_mouse;
-
-        if gui.last_cursor != ui.mouse_cursor() {
-            gui.last_cursor = ui.mouse_cursor();
-            gui.platform.prepare_render(&ui, window);
-        }
-
-        let result = imgui::Window::new("Game Info")
-            .size(Vector2::zero().into(), imgui::Condition::FirstUseEver)
-            .position(Vector2::new(0.0, 0.0).into(), imgui::Condition::FirstUseEver)
-            .resizable(false)
-            // .movable(false)
-            .title_bar(false)
-            .always_auto_resize(true)
-            .build(&ui, || {
-                f(&ui)
-            });
-
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: None,
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: true,
-                    },
-                })],
-                depth_stencil_attachment: None,
-            });
-
-            gui.gui_renderer
-                .render(
-                    ui.render(),
-                    &self.queue,
-                    &self.device,
-                    &mut render_pass,
-                )
-                .expect("Rendering failed");
-        }
-
-        self.queue.submit(iter::once(encoder.finish()));
-
-        Ok(result)
     }
 }
 

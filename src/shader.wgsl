@@ -2,13 +2,17 @@ struct Camera {
     view_pos: vec4<f32>,
     view_proj: mat4x4<f32>,
 };
-@group(1) @binding(0)
+@group(0) @binding(0)
 var<uniform> camera: Camera;
 
 struct Chunk {
     chunk_offset: vec3<f32>,
 };
-@group(2) @binding(0)
+@group(1) @binding(0)
+var t_diffuse: texture_2d<f32>;
+@group(1) @binding(1)
+var s_diffuse: sampler;
+@group(1) @binding(2)
 var<uniform> u_chunk: Chunk;
 
 struct VertexInput {
@@ -32,11 +36,6 @@ fn vs_main(
     result.tex_coord = model.tex_coord;
     return result;
 }
-
-@group(0) @binding(0)
-var t_diffuse: texture_2d<f32>;
-@group(0) @binding(1)
-var s_diffuse: sampler;
 
 @fragment
 fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
