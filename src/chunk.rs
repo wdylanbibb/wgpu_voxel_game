@@ -2,6 +2,7 @@ use std::ops::Deref;
 
 use bytemuck::{Pod, Zeroable};
 use cgmath::{ElementWise, Vector2, Vector3};
+use encase::ShaderType;
 use ndarray::Array3;
 use wgpu::{BindGroup, DynamicOffset, RenderPass};
 use wgpu::util::DeviceExt;
@@ -137,8 +138,9 @@ pub struct ChunkVertex {
     pub tex_coord: Vector2<f32>,
 }
 
-unsafe impl bytemuck::Pod for ChunkVertex {}
-unsafe impl bytemuck::Zeroable for ChunkVertex {}
+unsafe impl Pod for ChunkVertex {}
+
+unsafe impl Zeroable for ChunkVertex {}
 
 impl Vertex for ChunkVertex {
     fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
@@ -153,23 +155,20 @@ impl Vertex for ChunkVertex {
 }
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(ShaderType, Debug, Copy, Clone)]
 pub struct ChunkUniform {
     pub chunk_offset: Vector3<f32>,
-    _padding: u32,
 }
 
 impl ChunkUniform {
     pub fn new(chunk_offset: Vector3<f32>) -> Self {
         Self {
             chunk_offset,
-            _padding: 0,
         }
     }
 }
 
 unsafe impl Pod for ChunkUniform {}
-
 unsafe impl Zeroable for ChunkUniform {}
 
 pub const ATLAS_SIZE: usize = 256;

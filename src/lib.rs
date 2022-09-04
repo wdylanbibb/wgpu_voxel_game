@@ -103,32 +103,7 @@ impl State {
                 label: Some("camera bind group"),
             });
 
-        let texture_bind_group_layout = renderer
-            .device
-            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
-                label: Some("texture bind group layout"),
-            });
-
-        let chunk_uniform_size = mem::size_of::<ChunkUniform>() as wgpu::BufferAddress;
-        let num_chunks = 16 as wgpu::BufferAddress;
+        let chunk_uniform_size = mem::size_of::<ChunkUniform>().next_power_of_two() as wgpu::BufferAddress;
         // Make the `uniform_alignment` >= `chunk_uniform_size` and aligned to `min_uniform_buffer_offset_alignment`
         let uniform_alignment = {
             let alignment = renderer
@@ -137,12 +112,53 @@ impl State {
                 .min_uniform_buffer_offset_alignment as wgpu::BufferAddress;
             align_to(chunk_uniform_size, alignment)
         };
+
+        let rectangle = (0..16)
+            .map(|x| {
+                (0..16).map(move |z| (Vector3::new(x, 0, z), Block::grass()))
+            })
+            .flatten()
+            .collect::<Vec<(Vector3<i32>, Block)>>();
+
+        // Create array of chunks and fill them with blocks
+        let chunks = {
+            let mut chunks = Vec::new();
+
+            for x in -1..=1 {
+                for y in -1..=1 {
+                    let uniform_offset = (((3 * x + y) + 4) as u64 * uniform_alignment) as _;
+
+                    chunks.push(
+                        // Currently no way to update buffer between chunk renders, so all chunks
+                        // are drawn over each other
+                        Chunk::new(Vector2::new(x, y), uniform_offset, &renderer.device)
+                            .with_blocks(rectangle.clone(), &renderer.queue),
+                    );
+                }
+            }
+
+            chunks
+        };
+
+        let mut local_buf = encase::DynamicUniformBuffer::new_with_alignment(Vec::new(), uniform_alignment);
+
+        for chunk in chunks.iter() {
+            let data = ChunkUniform::new(
+                Vector3::new(
+                    (chunk.world_offset.x * CHUNK_WIDTH as i32) as f32,
+                    0.0,
+                    (chunk.world_offset.y * CHUNK_DEPTH as i32) as f32,
+                ),
+            );
+
+            local_buf.write(&data).unwrap();
+        }
+
         // Note: dynamic uniform offsets also have to be aligned to `Limits::min_uniform_buffer_offset_alignment`.
-        let chunk_uniform_buffer = renderer.device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: num_chunks * uniform_alignment,
+        let chunk_uniform_buffer = renderer.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Chunk Uniform Buffer"),
+            contents: local_buf.as_ref(),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
         });
 
         let local_bind_group_layout = renderer.device
@@ -232,31 +248,6 @@ impl State {
             )
         };
 
-        let rectangle = (0..16)
-            .map(|x| {
-                (0..16).map(move |z| (Vector3::new(x, 0, z), Block::grass()))
-            })
-            .flatten()
-            .collect::<Vec<(Vector3<i32>, Block)>>();
-
-        // Create array of chunks and fill them with blocks
-        let chunks = {
-            let mut chunks = Vec::new();
-
-            for x in -1..=1 {
-                for y in -1..=1 {
-                    chunks.push(
-                        // Currently no way to update buffer between chunk renders, so all chunks
-                        // are drawn over each other
-                        Chunk::new(Vector2::new(x, y), (((3 * x + y) + 4) as u64 * uniform_alignment) as _, &renderer.device)
-                            .with_blocks(rectangle.clone(), &renderer.queue),
-                    );
-                }
-            }
-
-            chunks
-        };
-
         Self {
             renderer,
             gui,
@@ -341,21 +332,21 @@ impl State {
         // let bold_font = self.gui.imgui.fonts().fonts()[1];
 
         // update uniforms
-        for chunk in self.chunks.iter() {
-            let data = ChunkUniform::new(
-                Vector3::new(
-                    (chunk.world_offset.x * CHUNK_WIDTH as i32) as f32,
-                    0.0,
-                    (chunk.world_offset.y * CHUNK_DEPTH as i32) as f32,
-                ),
-            );
-
-            self.renderer.queue.write_buffer(
-                &self.chunk_uniform_buffer,
-                chunk.mesh.uniform_offset as wgpu::BufferAddress,
-                bytemuck::bytes_of(&data),
-            );
-        }
+        // for chunk in self.chunks.iter() {
+        //     let data = ChunkUniform::new(
+        //         Vector3::new(
+        //             (chunk.world_offset.x * CHUNK_WIDTH as i32) as f32,
+        //             0.0,
+        //             (chunk.world_offset.y * CHUNK_DEPTH as i32) as f32,
+        //         ),
+        //     );
+        //
+        //     self.renderer.queue.write_buffer(
+        //         &self.chunk_uniform_buffer,
+        //         chunk.mesh.uniform_offset as wgpu::BufferAddress,
+        //         bytemuck::bytes_of(&data),
+        //     );
+        // }
 
         self.renderer.render(
             &self.render_pipeline,
