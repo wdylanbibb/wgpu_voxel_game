@@ -28,6 +28,7 @@ mod resources;
 mod texture;
 mod trait_enum;
 mod gui;
+mod engine;
 
 struct State {
     renderer: Renderer,
@@ -435,4 +436,39 @@ pub fn run() {
             _ => {}
         }
     });
+}
+
+#[derive(bevy_ecs::component::Component)]
+struct TimerThing(engine::time::timer::Timer);
+
+fn timer_went_off(
+    mut timer: bevy_ecs::system::Query<(bevy_ecs::entity::Entity, &mut TimerThing)>,
+    time: bevy_ecs::system::Res<engine::time::time::Time>,
+    mut commands: bevy_ecs::system::Commands,
+) {
+    for (entity, mut timer) in timer.iter_mut() {
+        timer.0.tick(time.delta());
+
+        if timer.0.finished() {
+            println!("Timer went off!");
+
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+fn setup(
+    mut commands: bevy_ecs::system::Commands
+) {
+    commands.spawn().insert(TimerThing(engine::time::timer::Timer::from_seconds(2.0, false)));
+}
+
+pub fn run_engine() {
+    engine::engine::Engine::new()
+        .add_module(engine::window::WindowModule)
+        .add_module(engine::input::InputModule)
+        .add_module(engine::time::TimeModule)
+        .add_startup_system(setup)
+        .add_system(timer_went_off)
+        .run();
 }

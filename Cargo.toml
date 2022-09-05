@@ -24,6 +24,10 @@ imgui = "0.8.2"
 imgui-winit-support = { version = "0.8.2", default-features = false, features = ["winit-26"] }
 imgui-wgpu = "0.20.0"
 
+bevy_ecs = "0.8.0"
+
+hashbrown = "0.12.3"
+
 encase = { version = "0.3.0", features = ["cgmath", "ndarray"] }
 
 [build-dependencies]
