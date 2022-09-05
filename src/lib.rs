@@ -40,7 +40,7 @@ struct State {
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
 
-    chunk_uniform_buffer: wgpu::Buffer,
+    // chunk_uniform_buffer: wgpu::Buffer,
     chunk_uniform_bind_group: wgpu::BindGroup,
 
     render_pipeline: wgpu::RenderPipeline,
@@ -257,7 +257,7 @@ impl State {
             camera_uniform,
             camera_buffer,
             camera_bind_group,
-            chunk_uniform_buffer,
+            // chunk_uniform_buffer,
             chunk_uniform_bind_group,
             render_pipeline,
             chunks,
