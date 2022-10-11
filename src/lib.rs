@@ -113,26 +113,22 @@ impl State {
             align_to(chunk_uniform_size, alignment)
         };
 
-        let rectangle = (0..16)
-            .map(|x| {
-                (0..16).map(move |z| (Vector3::new(x, 0, z), Block::grass()))
-            })
-            .flatten()
-            .collect::<Vec<(Vector3<i32>, Block)>>();
-
         // Create array of chunks and fill them with blocks
         let chunks = {
             let mut chunks = Vec::new();
 
-            for x in -1..=1 {
-                for y in -1..=1 {
-                    let uniform_offset = (((3 * x + y) + 4) as u64 * uniform_alignment) as _;
+            for chunk_x in -1..=1 {
+                for chunk_y in -1..=1 {
+                    let uniform_offset = (((3 * chunk_x + chunk_y) + 4) as u64 * uniform_alignment) as _;
 
                     chunks.push(
-                        // Currently no way to update buffer between chunk renders, so all chunks
-                        // are drawn over each other
-                        Chunk::new(Vector2::new(x, y), uniform_offset, &renderer.device)
-                            .with_blocks(rectangle.clone(), &renderer.queue),
+                        Chunk::new(Vector2::new(chunk_x, chunk_y), uniform_offset, &renderer.device)
+                            .with_blocks(
+                                (0..16).map(|x| {
+                                    (0..16).map(move |z| (Vector3::new(x, (chunk_x+1)+(chunk_y+1), z), Block::grass()))
+                                }).flatten().collect::<Vec<(Vector3<i32>, Block)>>(),
+                                &renderer.queue
+                            ),
                     );
                 }
             }
@@ -142,7 +138,7 @@ impl State {
 
         let mut local_buf = encase::DynamicUniformBuffer::new_with_alignment(Vec::new(), uniform_alignment);
 
-        for chunk in chunks.iter() {
+        for (i, chunk) in chunks.iter().enumerate() {
             let data = ChunkUniform::new(
                 Vector3::new(
                     (chunk.world_offset.x * CHUNK_WIDTH as i32) as f32,
