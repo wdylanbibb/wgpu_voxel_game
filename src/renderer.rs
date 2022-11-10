@@ -1,5 +1,3 @@
-//! A Frames Per Second counter.
-
 use std::collections::vec_deque::VecDeque;
 use std::iter;
 use std::time::{Duration, Instant};

@@ -26,7 +26,6 @@ mod material;
 mod renderer;
 mod resources;
 mod texture;
-mod trait_enum;
 mod gui;
 
 struct State {
@@ -125,7 +124,7 @@ impl State {
                         Chunk::new(Vector2::new(chunk_x, chunk_y), uniform_offset, &renderer.device)
                             .with_blocks(
                                 (0..16).map(|x| {
-                                    (0..16).map(move |z| (Vector3::new(x, (chunk_x+1)+(chunk_y+1), z), Block::grass()))
+                                    (0..16).map(move |z| (Vector3::new(x, (chunk_x+1)+(chunk_y+1), z), Block::new_grass()))
                                 }).flatten().collect::<Vec<(Vector3<i32>, Block)>>(),
                                 &renderer.queue
                             ),
@@ -138,7 +137,7 @@ impl State {
 
         let mut local_buf = encase::DynamicUniformBuffer::new_with_alignment(Vec::new(), uniform_alignment);
 
-        for (i, chunk) in chunks.iter().enumerate() {
+        for (_i, chunk) in chunks.iter().enumerate() {
             let data = ChunkUniform::new(
                 Vector3::new(
                     (chunk.world_offset.x * CHUNK_WIDTH as i32) as f32,

@@ -1,8 +1,10 @@
+#![allow(dead_code)]
 use std::ops::{Deref, DerefMut, Div, Mul};
 
 use cgmath::{ElementWise, Vector2};
 
-use crate::{chunk, trait_enum};
+use crate::chunk;
+use macros::trait_enum;
 
 pub struct TexCoordConfig {
     pub front: Vector2<f32>,
@@ -103,7 +105,6 @@ trait_enum! {
                 TexCoordConfig::top_bottom_sides(Vector2::new(0.0, 0.0), Vector2::new(32.0, 0.0), Vector2::new(16.0, 0.0))
             }
         },
-        #[allow(dead_code)]
         Stone: {
             fn texture_coordinates(&self) -> TexCoordConfig {
                 TexCoordConfig::all_same(Vector2::new(48.0, 0.0))
