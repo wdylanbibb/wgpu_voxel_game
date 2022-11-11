@@ -22,7 +22,6 @@ use crate::resources::get_bytes;
 mod block;
 mod camera;
 mod chunk;
-mod material;
 mod renderer;
 mod resources;
 mod texture;

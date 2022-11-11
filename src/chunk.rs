@@ -208,7 +208,7 @@ impl ChunkMesh {
     fn flatten_3d(v: (i32, i32, i32)) -> u64 {
         // CHUNK_HEIGHT >> 1 is added to the y position to allow for y values of -127 to 128
         let (x, y, z) = v;
-        (x + CHUNK_WIDTH as i32 * (y + (CHUNK_HEIGHT >> 1) as i32 + CHUNK_DEPTH as i32 * z)) as u64
+        (x + CHUNK_WIDTH as i32 * (y + (CHUNK_HEIGHT >> 1) as i32 + CHUNK_HEIGHT as i32 * z)) as u64
     }
 
     fn set_block(
@@ -224,7 +224,7 @@ impl ChunkMesh {
             queue.write_buffer(
                 &self.vertex_buffer,
                 flattened * std::mem::size_of::<ChunkVertex>() as u64 * 24,
-                bytemuck::cast_slice(&[0u8; std::mem::size_of::<ChunkVertex>() * 24]),
+                bytemuck::cast_slice(&[0u32; std::mem::size_of::<ChunkVertex>() * 24]),
             );
 
             queue.write_buffer(
