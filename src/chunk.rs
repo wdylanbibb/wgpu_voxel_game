@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
 use bytemuck::{Pod, Zeroable};
-use cgmath::{ElementWise, Vector2, Vector3};
+use cgmath::{Vector2, Vector3, Zero};
 use encase::ShaderType;
 use ndarray::Array3;
 use wgpu::{BindGroup, DynamicOffset, RenderPass};
@@ -40,7 +40,7 @@ pub enum Direction {
 }
 
 impl Direction {
-    fn cube_verts(&self) -> [Vector3<f32>; 4] {
+    pub fn cube_verts(&self) -> [Vector3<f32>; 4] {
         match self {
             Direction::FRONT => [
                 Vector3::new(-0.5, -0.5, 0.5),
@@ -81,7 +81,7 @@ impl Direction {
         }
     }
 
-    fn cube_indices(&self) -> [u32; 6] {
+    pub fn cube_indices(&self) -> [u32; 6] {
         match self {
             Direction::FRONT => [0, 1, 2, 2, 3, 0],
             Direction::BACK => [4, 5, 6, 6, 7, 4],
@@ -92,7 +92,7 @@ impl Direction {
         }
     }
 
-    fn to_vec3(&self) -> Vector3<i32> {
+    pub fn to_vec3(&self) -> Vector3<i32> {
         match self {
             Direction::FRONT => Vector3::new(0, 0, 1),
             Direction::BACK => Vector3::new(0, 0, -1),
@@ -103,7 +103,7 @@ impl Direction {
         }
     }
 
-    fn index(&self) -> u32 {
+    pub fn index(&self) -> u32 {
         match self {
             Direction::FRONT => 0,
             Direction::BACK => 1,
@@ -114,7 +114,7 @@ impl Direction {
         }
     }
 
-    fn get_opposite(&self) -> Self {
+    pub fn get_opposite(&self) -> Self {
         match self {
             Direction::FRONT => Direction::BACK,
             Direction::BACK => Direction::FRONT,
@@ -179,140 +179,68 @@ pub struct ChunkMesh {
     index_buffer: wgpu::Buffer,
     num_elements: u32,
     pub uniform_offset: DynamicOffset,
+    pub vertices: Vec<ChunkVertex>,
+    pub indices: Vec<u32>,
 }
 
 impl ChunkMesh {
-    fn new(uniform_offset: DynamicOffset, device: &wgpu::Device) -> Self {
+    pub fn new(uniform_offset: DynamicOffset, device: &wgpu::Device) -> Self {
+        let vertices = vec![
+            ChunkVertex { position: Vector3::zero(), tex_coord: Vector2::zero() }; 24 * CHUNK_SIZE
+        ];
+
+        let indices = vec![0u32; 36 * CHUNK_SIZE];
+
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
-            contents: bytemuck::cast_slice(
-                &[0u32; std::mem::size_of::<ChunkVertex>() * 24 * CHUNK_SIZE],
-            ),
+            contents: bytemuck::cast_slice(&vertices),
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
-            contents: bytemuck::cast_slice(&[0u32; 36 * CHUNK_SIZE]),
+            contents: bytemuck::cast_slice(&indices),
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
         });
 
         ChunkMesh {
             vertex_buffer,
             index_buffer,
-            num_elements: 36 * CHUNK_SIZE as u32,
+            num_elements: indices.len() as u32,
             uniform_offset,
+            vertices,
+            indices,
         }
     }
 
-    fn flatten_3d(v: (i32, i32, i32)) -> u64 {
+    pub fn flatten_3d(v: (i32, i32, i32)) -> u64 {
         // CHUNK_HEIGHT >> 1 is added to the y position to allow for y values of -127 to 128
         let (x, y, z) = v;
         (x + CHUNK_WIDTH as i32 * (y + (CHUNK_HEIGHT >> 1) as i32 + CHUNK_HEIGHT as i32 * z)) as u64
     }
 
-    fn set_block(
-        &self,
-        chunk: &Chunk,
-        chunk_position: Vector3<i32>,
-        block: &block::Block,
-        queue: &wgpu::Queue,
-    ) {
-        let flattened = ChunkMesh::flatten_3d(chunk_position.into());
-
-        if let block::Block::Air(_) = block {
-            queue.write_buffer(
-                &self.vertex_buffer,
-                flattened * std::mem::size_of::<ChunkVertex>() as u64 * 24,
-                bytemuck::cast_slice(&[0u32; std::mem::size_of::<ChunkVertex>() * 24]),
-            );
-
-            queue.write_buffer(
-                &self.index_buffer,
-                flattened * std::mem::size_of::<u32>() as u64 * 36,
-                bytemuck::cast_slice(&[0u32; 36]),
-            );
-
-            for face in [
-                Direction::FRONT,
-                Direction::BACK,
-                Direction::TOP,
-                Direction::BOTTOM,
-                Direction::LEFT,
-                Direction::RIGHT,
-            ] {
-                let v = face.to_vec3().add_element_wise(chunk_position);
-
-                let neighbor = chunk.get_block(v);
-                match neighbor {
-                    Some(neighbor) => {
-                        if let block::Block::Air(_) = neighbor {
-                            // The face is touching air: do nothing
-                        } else {
-                            // The face is touching a neighbor: put the block face back
-                            self.add_face(
-                                v,
-                                &face.get_opposite(),
-                                &neighbor,
-                                queue,
-                            );
-                        }
-                    }
-                    _ => (), // The air block is on the edge of a chunk: do nothing
-                }
-            }
-
-            return;
-        }
-
-        for face in [
-            Direction::FRONT,
-            Direction::BACK,
-            Direction::TOP,
-            Direction::BOTTOM,
-            Direction::LEFT,
-            Direction::RIGHT,
-        ] {
-            let v = face.to_vec3().add_element_wise(chunk_position);
-
-            let neighbor = chunk.get_block(v);
-            match neighbor {
-                Some(neighbor) => {
-                    if let block::Block::Air(_) = neighbor {
-                        // The face is touching air
-                        self.add_face(chunk_position, &face, block, queue);
-                    } else {
-                        // The face is touching a neighbor
-                        self.remove_face(chunk_position, &face, queue);
-                        chunk.mesh.remove_face(v, &face.get_opposite(), queue);
-                    }
-                }
-                None => {
-                    // The face is on the edge of a chunk
-                    self.add_face(chunk_position, &face, block, queue)
-                }
-            }
-        }
+    pub fn buffer_write(&self, queue: &wgpu::Queue) {
+        queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&self.vertices));
+        queue.write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&self.indices));
     }
 
-    fn get_buf_offset(chunk_position: Vector3<i32>, face: &Direction) -> (u64, u64) {
+    pub fn get_buf_offset(chunk_position: Vector3<i32>, face: &Direction) -> (u64, u64) {
         let flattened = ChunkMesh::flatten_3d(chunk_position.into());
 
-        let v_off = flattened * std::mem::size_of::<ChunkVertex>() as u64 * 24
-            + face.index() as u64 * std::mem::size_of::<ChunkVertex>() as u64 * 4;
+        let v_off = flattened * 24
+            + face.index() as u64 * 4;
 
-        let i_off = flattened * std::mem::size_of::<u32>() as u64 * 36
-            + face.index() as u64 * std::mem::size_of::<u32>() as u64 * 6;
+        let i_off = flattened * 36
+            + face.index() as u64 * 6;
 
         (v_off, i_off)
     }
 
-    fn add_face(
-        &self,
+    pub fn add_face(
+        &mut self,
         chunk_position: Vector3<i32>,
         face: &Direction,
         block: &block::Block,
-        queue: &wgpu::Queue,
     ) {
         let flattened = ChunkMesh::flatten_3d(chunk_position.into());
 
@@ -332,31 +260,23 @@ impl ChunkMesh {
                 .collect::<Vec<_>>()
         };
 
+        let indices = face.cube_indices().map(|i| i + 24 * flattened as u32);
+
         let (v_off, i_off) = ChunkMesh::get_buf_offset(chunk_position, &face);
 
-        queue.write_buffer(&self.vertex_buffer, v_off, bytemuck::cast_slice(&vertices));
-
-        queue.write_buffer(
-            &self.index_buffer,
-            i_off,
-            bytemuck::cast_slice(&face.cube_indices().map(|i| i + 24 * flattened as u32)),
-        );
+        self.vertices.splice(v_off as usize..(v_off as usize + vertices.len()), vertices);
+        self.indices.splice(i_off as usize..(i_off as usize + indices.len()), indices);
     }
 
-    fn remove_face(&self, position: Vector3<i32>, face: &Direction, queue: &wgpu::Queue) {
+    pub fn remove_face(&mut self, position: Vector3<i32>, face: &Direction/* , queue: &wgpu::Queue */) {
         let (v_off, i_off) = ChunkMesh::get_buf_offset(position, &face);
 
-        queue.write_buffer(
-            &self.vertex_buffer,
-            v_off,
-            bytemuck::cast_slice(&[0u8; std::mem::size_of::<ChunkVertex>() * 4]),
+        self.vertices.splice(
+            v_off as usize..(v_off as usize + 4),
+            vec![ChunkVertex { position: Vector3::zero(), tex_coord: Vector2::zero() }; 4]
         );
 
-        queue.write_buffer(
-            &self.index_buffer,
-            i_off,
-            bytemuck::cast_slice(&[0u32; 6]),
-        );
+        self.indices.splice(i_off as usize..(i_off as usize + 6), vec![0u32; 6]);
     }
 }
 
@@ -369,37 +289,20 @@ pub const CHUNK_SIZE: usize = CHUNK_WIDTH * CHUNK_HEIGHT * CHUNK_DEPTH;
 pub struct Chunk {
     pub blocks: Array3<block::Block>,
     pub world_offset: Vector2<i32>,
-    pub mesh: ChunkMesh,
 }
 
 impl Chunk {
-    pub fn new(world_offset: Vector2<i32>, uniform_offset: DynamicOffset, device: &wgpu::Device) -> Self {
+    pub fn new(world_offset: Vector2<i32>) -> Self {
         let blocks =
             Array3::<block::Block>::from_shape_fn(CHUNK_DIMS, |_| block::Block::Air(block::Air));
-
-        let mesh = ChunkMesh::new(uniform_offset, &device);
 
         Self {
             blocks,
             world_offset,
-            mesh,
         }
     }
 
-    pub fn with_blocks(
-        mut self,
-        blocks: Vec<(Vector3<i32>, block::Block)>,
-        queue: &wgpu::Queue,
-    ) -> Self {
-        for (position, block) in blocks {
-            self.set_block(position, block, queue);
-        }
-
-        self
-    }
-
-    pub fn set_block(&mut self, position: Vector3<i32>, block: block::Block, queue: &wgpu::Queue) {
-        self.mesh.set_block(self, position, &block, queue);
+    pub fn set_block(&mut self, position: Vector3<i32>, block: block::Block) {
 
         self.blocks[[
             position.x as usize,

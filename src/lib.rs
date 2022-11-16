@@ -14,10 +14,11 @@ use winit::{
 };
 
 use crate::block::Block;
-use crate::chunk::{Chunk, CHUNK_DEPTH, CHUNK_WIDTH, ChunkUniform, Vertex};
+use crate::chunk::{CHUNK_DEPTH, CHUNK_WIDTH, ChunkUniform, Vertex};
 use crate::gui::Gui;
 use crate::renderer::Renderer;
 use crate::resources::get_bytes;
+use crate::world::World;
 
 mod block;
 mod camera;
@@ -26,6 +27,7 @@ mod renderer;
 mod resources;
 mod texture;
 mod gui;
+mod world;
 
 struct State {
     renderer: Renderer,
@@ -42,7 +44,7 @@ struct State {
     chunk_uniform_bind_group: wgpu::BindGroup,
 
     render_pipeline: wgpu::RenderPipeline,
-    chunks: Vec<Chunk>,
+    world: World,
     mouse_pressed: bool,
 }
 
@@ -111,32 +113,38 @@ impl State {
             align_to(chunk_uniform_size, alignment)
         };
 
-        // Create array of chunks and fill them with blocks
-        let chunks = {
-            let mut chunks = Vec::new();
+        let world = {
+            let mut world = World::new();
 
             for chunk_x in -1..=1 {
                 for chunk_y in -1..=1 {
                     let uniform_offset = (((3 * chunk_x + chunk_y) + 4) as u64 * uniform_alignment) as _;
 
-                    chunks.push(
-                        Chunk::new(Vector2::new(chunk_x, chunk_y), uniform_offset, &renderer.device)
-                            .with_blocks(
-                                (0..16).map(|x| {
-                                    (0..16).map(move |z| (Vector3::new(x, (chunk_x+1)+(chunk_y+1), z), Block::new_grass()))
-                                }).flatten().collect::<Vec<(Vector3<i32>, Block)>>(),
-                                &renderer.queue
-                            ),
-                    );
+                    let i = world.new_chunk(Vector2::new(chunk_x, chunk_y), uniform_offset, &renderer.device);
+
+                    for x in 0..16 {
+                        for y in -128..(chunk_x+chunk_y+2) {
+                            let block = if y < chunk_x+chunk_y+1 { Block::new_stone() } else { Block::new_grass() };
+                            for z in 0..16 {
+                                world.set_block(
+                                    i,
+                                    Vector3::new(x, y, z),
+                                    block,
+                                );
+                            }
+                        }
+                    }
                 }
             }
 
-            chunks
+            world.update_buffers(&renderer.queue);
+
+            world
         };
 
         let mut local_buf = encase::DynamicUniformBuffer::new_with_alignment(Vec::new(), uniform_alignment);
 
-        for (_i, chunk) in chunks.iter().enumerate() {
+        for (_i, chunk) in world.chunks_iter().enumerate() {
             let data = ChunkUniform::new(
                 Vector3::new(
                     (chunk.world_offset.x * CHUNK_WIDTH as i32) as f32,
@@ -254,7 +262,7 @@ impl State {
             // chunk_uniform_buffer,
             chunk_uniform_bind_group,
             render_pipeline,
-            chunks,
+            world,
             mouse_pressed: false,
         }
     }
@@ -346,9 +354,9 @@ impl State {
             &self.render_pipeline,
             &self.camera_bind_group,
             &self
-                .chunks
-                .iter()
-                .map(|chunk| (&chunk.mesh, &self.chunk_uniform_bind_group))
+                .world
+                .chunk_mesh_iter()
+                .map(|mesh| (mesh, &self.chunk_uniform_bind_group))
                 .collect::<Vec<_>>(),
         )?;
 
