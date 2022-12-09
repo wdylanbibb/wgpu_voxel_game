@@ -116,9 +116,12 @@ impl State {
         let world = {
             let mut world = World::new();
 
+            let mut off = 0;
+
             for chunk_x in -1..=1 {
                 for chunk_y in -1..=1 {
-                    let uniform_offset = (((3 * chunk_x + chunk_y) + 4) as u64 * uniform_alignment) as _;
+                    let uniform_offset = (off as u64 * uniform_alignment) as _;
+                    off += 1;
 
                     let i = world.new_chunk(Vector2::new(chunk_x, chunk_y), uniform_offset, &renderer.device);
 
@@ -134,8 +137,18 @@ impl State {
                             }
                         }
                     }
+
+                    world.set_block(i, Vector3::new(8, chunk_x + chunk_y + 1, 8), Block::new_air());
                 }
             }
+
+            // let chunk1 = world.new_chunk(Vector2::new(0, 0), 0, &renderer.device);
+            // let chunk2 = world.new_chunk(Vector2::new(-1, 0), uniform_alignment as _, &renderer.device);
+            //
+            // world.set_block(chunk1, Vector3::new(0, 0, 0), Block::new_grass());
+            // world.set_block(chunk1, Vector3::new(0, 1, 0), Block::new_stone());
+            // world.set_block(chunk2, Vector3::new(15, 0, 0), Block::new_stone());
+            // world.set_block(chunk2, Vector3::new(15, 0, 1), Block::new_grass());
 
             world.update_buffers(&renderer.queue);
 

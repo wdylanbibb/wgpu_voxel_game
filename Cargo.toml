@@ -18,6 +18,7 @@ anyhow = "1.0.58"
 instant = "0.1.12"
 ndarray = "0.15.6"
 raw-window-handle = "0.5.0"
+hashbrown = "0.13.1"
 imgui = "0.8.2"
 imgui-winit-support = { version = "0.8.2", default-features = false, features = ["winit-26"] }
 imgui-wgpu = "0.20.0"

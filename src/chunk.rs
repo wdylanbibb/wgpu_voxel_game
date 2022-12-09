@@ -1,4 +1,5 @@
 use std::ops::Deref;
+use std::rc::Rc;
 
 use bytemuck::{Pod, Zeroable};
 use cgmath::{Vector2, Vector3, Zero};
@@ -25,21 +26,18 @@ use crate::{block, renderer};
    */
 
 #[derive(Debug)]
+/// An enum for the different faces of a cube to allow for easy toggling
 pub enum Direction {
-    FRONT,
-    // 0, 0, 1
-    BACK,
-    // 0, 0, -1
-    TOP,
-    // 0, 1, 0
-    BOTTOM,
-    // 0, -1, 0
-    LEFT,
-    // -1, 0, 0
+    FRONT, // 0, 0, 1
+    BACK, // 0, 0, -1
+    TOP, // 0, 1, 0
+    BOTTOM, // 0, -1, 0
+    LEFT, // -1, 0, 0
     RIGHT,  // 1, 0, 0
 }
 
 impl Direction {
+    /// Returns the vertices that make up the face in a cube.
     pub fn cube_verts(&self) -> [Vector3<f32>; 4] {
         match self {
             Direction::FRONT => [
@@ -81,6 +79,7 @@ impl Direction {
         }
     }
 
+    /// Returns the indices that make up the face in a cube.
     pub fn cube_indices(&self) -> [u32; 6] {
         match self {
             Direction::FRONT => [0, 1, 2, 2, 3, 0],
@@ -92,6 +91,7 @@ impl Direction {
         }
     }
 
+    /// Returns the normal vector of the face.
     pub fn to_vec3(&self) -> Vector3<i32> {
         match self {
             Direction::FRONT => Vector3::new(0, 0, 1),
@@ -144,8 +144,7 @@ unsafe impl Zeroable for ChunkVertex {}
 
 impl Vertex for ChunkVertex {
     fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
-        static ATTRIBS: [wgpu::VertexAttribute; 2] =
-            wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2];
+        static ATTRIBS: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2];
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<ChunkVertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
@@ -174,9 +173,10 @@ unsafe impl Zeroable for ChunkUniform {}
 pub const ATLAS_SIZE: usize = 256;
 pub const TEXTURE_SIZE: usize = 16;
 
+#[derive(Clone)]
 pub struct ChunkMesh {
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
+    vertex_buffer: Rc<wgpu::Buffer>,
+    index_buffer: Rc<wgpu::Buffer>,
     num_elements: u32,
     pub uniform_offset: DynamicOffset,
     pub vertices: Vec<ChunkVertex>,
@@ -204,8 +204,8 @@ impl ChunkMesh {
         });
 
         ChunkMesh {
-            vertex_buffer,
-            index_buffer,
+            vertex_buffer: Rc::new(vertex_buffer),
+            index_buffer: Rc::new(index_buffer),
             num_elements: indices.len() as u32,
             uniform_offset,
             vertices,
@@ -238,14 +238,14 @@ impl ChunkMesh {
 
     pub fn add_face(
         &mut self,
-        chunk_position: Vector3<i32>,
+        block_position: Vector3<i32>,
         face: &Direction,
         block: &block::Block,
     ) {
-        let flattened = ChunkMesh::flatten_3d(chunk_position.into());
+        let flattened = ChunkMesh::flatten_3d(block_position.into());
 
         let vertices = {
-            let position = chunk_position.cast::<f32>().unwrap();
+            let position = block_position.cast::<f32>().unwrap();
 
             face.cube_verts()
                 .iter()
@@ -253,22 +253,24 @@ impl ChunkMesh {
                     &block.deref().texture_coordinates().to_vec()
                         [(face.index() * 4) as usize..(face.index() * 4 + 4) as usize],
                 )
-                .map(|(p, t)| ChunkVertex {
-                    position: *p + position,
-                    tex_coord: *t,
+                .map(|(p, t)| {
+                    ChunkVertex {
+                        position: *p + position,
+                        tex_coord: *t,
+                    }
                 })
                 .collect::<Vec<_>>()
         };
 
         let indices = face.cube_indices().map(|i| i + 24 * flattened as u32);
 
-        let (v_off, i_off) = ChunkMesh::get_buf_offset(chunk_position, &face);
+        let (v_off, i_off) = ChunkMesh::get_buf_offset(block_position, &face);
 
         self.vertices.splice(v_off as usize..(v_off as usize + vertices.len()), vertices);
         self.indices.splice(i_off as usize..(i_off as usize + indices.len()), indices);
     }
 
-    pub fn remove_face(&mut self, position: Vector3<i32>, face: &Direction/* , queue: &wgpu::Queue */) {
+    pub fn remove_face(&mut self, position: Vector3<i32>, face: &Direction) {
         let (v_off, i_off) = ChunkMesh::get_buf_offset(position, &face);
 
         self.vertices.splice(
@@ -286,6 +288,7 @@ pub const CHUNK_DEPTH: usize = 16;
 pub const CHUNK_DIMS: (usize, usize, usize) = (CHUNK_WIDTH, CHUNK_HEIGHT, CHUNK_DEPTH);
 pub const CHUNK_SIZE: usize = CHUNK_WIDTH * CHUNK_HEIGHT * CHUNK_DEPTH;
 
+#[derive(Clone)]
 pub struct Chunk {
     pub blocks: Array3<block::Block>,
     pub world_offset: Vector2<i32>,
