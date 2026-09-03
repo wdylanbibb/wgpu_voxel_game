@@ -127,10 +127,10 @@ pub struct Model {
 }
 
 pub struct Material {
-    pub name: String,
-    pub diffuse_texture: texture::Texture,
-    pub normal_texture: texture::Texture,
-    pub bind_group: wgpu::BindGroup,
+    name: String,
+    diffuse_texture: texture::Texture,
+    normal_texture: texture::Texture,
+    bind_group: wgpu::BindGroup,
 }
 
 impl Material {

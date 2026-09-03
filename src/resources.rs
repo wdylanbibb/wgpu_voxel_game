@@ -194,7 +194,7 @@ fn format_url(file_name: &str) -> reqwest::Url {
     page_url.join(&format!("res/{file_name}")).unwrap()
 }
 
-pub async fn load_string(file_name: &str) -> anyhow::Result<String> {
+async fn load_string(file_name: &str) -> anyhow::Result<String> {
     #[cfg(target_arch = "wasm32")]
     let txt = {
         let url = format_url(file_name);
@@ -228,7 +228,7 @@ pub async fn load_binary(file_name: &str) -> anyhow::Result<Vec<u8>> {
     Ok(data)
 }
 
-pub async fn load_texture(
+async fn load_texture(
     file_name: &str,
     is_normal_map: bool,
     device: &wgpu::Device,

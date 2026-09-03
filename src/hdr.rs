@@ -1,6 +1,6 @@
 use wgpu::Operations;
 
-use crate::{create_render_pipeline, texture};
+use crate::{pipeline, texture};
 
 pub struct HdrPipeline {
     pipeline: wgpu::RenderPipeline,
@@ -72,7 +72,7 @@ impl HdrPipeline {
             immediate_size: 0,
         });
 
-        let pipeline = create_render_pipeline(
+        let pipeline = pipeline::create_render_pipeline(
             device,
             &pipeline_layout,
             config.format.add_srgb_suffix(),

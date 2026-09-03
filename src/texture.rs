@@ -1,6 +1,5 @@
 use anyhow::*;
 use image::GenericImageView;
-use wgpu::Device;
 
 pub struct Texture {
     #[allow(unused)]
@@ -68,7 +67,7 @@ impl Texture {
         Self::from_image(device, queue, &img, Some(label), is_normal_map)
     }
 
-    pub fn from_image(
+    fn from_image(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         img: &image::DynamicImage,
@@ -118,7 +117,7 @@ impl Texture {
         Ok(texture)
     }
 
-    pub(crate) fn create_2d_texture(
+    pub fn create_2d_texture(
         device: &wgpu::Device,
         width: u32,
         height: u32,
@@ -143,7 +142,7 @@ impl Texture {
         )
     }
 
-    pub fn create_texture(
+    fn create_texture(
         device: &wgpu::Device,
         label: Option<&str>,
         size: wgpu::Extent3d,
