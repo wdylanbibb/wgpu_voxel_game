@@ -7,6 +7,10 @@ mod app;
 mod gpu;
 mod pipeline;
 mod state;
+mod renderer;
+mod scene;
+mod light;
+mod input;
 
 pub use app::run;
 

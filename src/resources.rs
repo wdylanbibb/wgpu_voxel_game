@@ -14,7 +14,7 @@ pub struct HdrLoader {
 
 impl HdrLoader {
     pub fn new(device: &wgpu::Device) -> Self {
-        let module = device.create_shader_module(wgpu::include_wgsl!("equirectangular.wgsl"));
+        let module = device.create_shader_module(wgpu::include_wgsl!("shaders/equirectangular.wgsl"));
         let source_format = wgpu::TextureFormat::Rgba32Float;
         let cubemap_format = wgpu::TextureFormat::Rgba16Float;
         let equirect_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -164,7 +164,7 @@ impl HdrLoader {
             timestamp_writes: None,
         });
 
-        let num_workgroups = (dst_size + 15) / 16;
+        let num_workgroups = dst_size.div_ceil(16);
         pass.set_pipeline(&self.equirect_to_cubemap);
         pass.set_bind_group(0, &bind_group, &[]);
         pass.dispatch_workgroups(num_workgroups, num_workgroups, 6);

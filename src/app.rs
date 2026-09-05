@@ -7,6 +7,10 @@ use winit::{
     keyboard::PhysicalKey,
     window::Window,
 };
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
+#[cfg(target_arch = "wasm32")]
+use winit::platform::web::EventLoopExtWebSys;
 
 use crate::state::State;
 
@@ -83,10 +87,10 @@ impl ApplicationHandler<State> for App {
         // This is where proxy.send_event() ends up
         #[cfg(target_arch = "wasm32")]
         {
-            event.window.request_redraw();
+            event.window().request_redraw();
             event.resize(
-                event.window.inner_size().width,
-                event.window.inner_size().height,
+                event.window().inner_size().width,
+                event.window().inner_size().height,
             );
         }
         self.state = Some(event);
@@ -94,8 +98,8 @@ impl ApplicationHandler<State> for App {
 
     fn device_event(
         &mut self,
-        event_loop: &ActiveEventLoop,
-        device_id: DeviceId,
+        _event_loop: &ActiveEventLoop,
+        _device_id: DeviceId,
         event: DeviceEvent,
     ) {
         let state = if let Some(state) = &mut self.state {
@@ -103,13 +107,9 @@ impl ApplicationHandler<State> for App {
         } else {
             return;
         };
-        match event {
-            DeviceEvent::MouseMotion { delta: (dx, dy) } => {
-                if state.mouse_pressed {
-                    state.camera_controller.handle_mouse(dx, dy);
-                }
-            }
-            _ => {}
+
+        if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event {
+            state.handle_mouse_motion(dx, dy);
         }
     }
 

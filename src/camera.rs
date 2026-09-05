@@ -1,7 +1,10 @@
 use cgmath::*;
 use instant::Duration;
 use std::f32::consts::FRAC_PI_2;
+use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalPosition, event::*, keyboard::KeyCode};
+
+use crate::gpu;
 
 #[rustfmt::skip]
 const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::from_cols(
@@ -174,5 +177,88 @@ impl CameraController {
         } else if camera.pitch > Rad(SAFE_FRAC_PI_2) {
             camera.pitch = Rad(SAFE_FRAC_PI_2);
         }
+    }
+}
+
+pub struct CameraState {
+    camera: Camera,
+    projection: Projection,
+    controller: CameraController,
+    uniform: gpu::CameraUniform,
+    buffer: wgpu::Buffer,
+    pub(crate) bind_group: wgpu::BindGroup,
+}
+
+impl CameraState {
+    pub fn new(
+        device: &wgpu::Device,
+        layout: &wgpu::BindGroupLayout,
+        width: u32,
+        height: u32,
+    ) -> Self {
+        let camera = Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
+        let projection = Projection::new(width, height, cgmath::Deg(45.0), 0.1, 100.0);
+        let controller = CameraController::new(4.0, 0.4);
+
+        let mut uniform = gpu::CameraUniform::new();
+        uniform.update_view_proj(&camera, &projection);
+
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Buffer"),
+            contents: bytemuck::cast_slice(&[uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
+            label: Some("camera_bind_group"),
+        });
+
+        Self {
+            camera,
+            projection,
+            controller,
+            uniform,
+            buffer,
+            bind_group,
+        }
+    }
+
+    pub fn resize(&mut self, queue: &wgpu::Queue, width: u32, height: u32) {
+        if width > 0 && height > 0 {
+            let max = 2048;
+
+            self.projection.resize(width.min(max), height.min(max));
+
+            self.uniform .update_view_proj(&self.camera, &self.projection);
+            queue.write_buffer(
+                &self.buffer,
+                0,
+                bytemuck::cast_slice(&[self.uniform]),
+            );
+        }
+    }
+
+    pub fn update(&mut self, queue: &wgpu::Queue, dt: Duration) {
+        self.controller.update_camera(&mut self.camera, dt);
+        self.uniform
+            .update_view_proj(&self.camera, &self.projection);
+        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[self.uniform]));
+    }
+
+    pub fn handle_key(&mut self, key: KeyCode, pressed: bool) -> bool {
+        self.controller.handle_key(key, pressed)
+    }
+
+    pub fn handle_mouse(&mut self, dx: f64, dy: f64) {
+        self.controller.handle_mouse(dx, dy);
+    }
+
+    pub fn handle_scroll(&mut self, delta: &MouseScrollDelta) {
+        self.controller.handle_scroll(delta);
     }
 }
