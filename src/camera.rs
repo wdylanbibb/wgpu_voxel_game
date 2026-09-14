@@ -4,7 +4,7 @@ use std::f32::consts::FRAC_PI_2;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalPosition, event::*, keyboard::KeyCode};
 
-use crate::gpu;
+use crate::renderer::gpu;
 
 #[rustfmt::skip]
 const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::from_cols(
@@ -234,12 +234,9 @@ impl CameraState {
 
             self.projection.resize(width.min(max), height.min(max));
 
-            self.uniform .update_view_proj(&self.camera, &self.projection);
-            queue.write_buffer(
-                &self.buffer,
-                0,
-                bytemuck::cast_slice(&[self.uniform]),
-            );
+            self.uniform
+                .update_view_proj(&self.camera, &self.projection);
+            queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[self.uniform]));
         }
     }
 

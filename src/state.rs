@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use winit::{
     event::{MouseButton, MouseScrollDelta},
@@ -7,29 +7,55 @@ use winit::{
     window::Window,
 };
 
-use crate::{camera, input, light, renderer, scene};
+use crate::{
+    camera, game, input, renderer,
+    world::{self, World, meshing::mesh_chunk},
+};
 
 pub struct State {
     window: Arc<Window>,
     renderer: renderer::Renderer,
-    scene: scene::Scene,
+    game: game::Game,
     camera: camera::CameraState,
-    light: light::LightState,
     input: input::InputState,
 }
 
 impl State {
-    // We don't need this to be async right now,
-    // but we will in the next tutorial
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
         let renderer = renderer::Renderer::new(window.clone()).await?;
 
-        let scene = scene::Scene::new(
-            &renderer.device,
-            &renderer.queue,
-            &renderer.layouts.material,
-        )
-        .await?;
+        let game = game::Game {
+            world: {
+                let mut chunks = HashMap::new();
+
+                let mut chunk = world::chunk::Chunk::from_blocks(Box::new(
+                    [world::block::BlockId::Air; world::chunk::CHUNK_VOLUME],
+                ));
+
+                for x in 0..world::chunk::CHUNK_SIZE {
+                    for y in 0..world::chunk::CHUNK_SIZE {
+                        for z in 0..world::chunk::CHUNK_SIZE {
+                            let block = if y == (world::chunk::CHUNK_SIZE - 1) {
+                                world::block::BlockId::Grass
+                            } else {
+                                if y < (world::chunk::CHUNK_SIZE - 4) {
+                                    world::block::BlockId::Stone
+                                } else {
+                                    world::block::BlockId::Dirt
+                                }
+                            };
+                            chunk.set(x, y, z, block);
+                        }
+                    }
+                }
+
+                chunk.set(8, 15, 8, world::block::BlockId::Air);
+
+                chunks.insert(cgmath::Vector3::new(0, -1, 0), chunk);
+
+                World::from_chunks(chunks)
+            },
+        };
 
         let camera = camera::CameraState::new(
             &renderer.device,
@@ -38,16 +64,13 @@ impl State {
             renderer.config.height,
         );
 
-        let light = light::LightState::new(&renderer.device, &renderer.layouts.light);
-
         let input = input::InputState::default();
 
         Ok(Self {
             window,
             renderer,
-            scene,
+            game,
             camera,
-            light,
             input,
         })
     }
@@ -61,14 +84,18 @@ impl State {
     }
 
     pub fn update(&mut self, dt: std::time::Duration) {
+        self.game.update(dt);
+
+        self.sync_chunk_meshes();
+
         self.camera.update(&self.renderer.queue, dt);
-        self.light.update(&self.renderer.queue, dt);
+        self.renderer.update(dt);
     }
 
     pub fn render(&mut self) -> anyhow::Result<()> {
         self.window.request_redraw();
 
-        self.renderer.render(&self.scene, &self.camera, &self.light)
+        self.renderer.render(&self.camera)
     }
 
     pub fn handle_key(&mut self, event_loop: &ActiveEventLoop, key: KeyCode, pressed: bool) {
@@ -99,5 +126,19 @@ impl State {
 
     pub fn window(&self) -> &Window {
         &self.window
+    }
+
+    fn sync_chunk_meshes(&mut self) {
+        let dirty_positions = self.game.world.take_dirty_meshes();
+
+        for chunk_pos in dirty_positions {
+            if self.game.world.contains_chunk(chunk_pos) {
+                let mesh = mesh_chunk(&self.game.world, chunk_pos);
+
+                self.renderer.upload_chunk_mesh(chunk_pos, mesh);
+            } else {
+                self.renderer.remove_chunk_mesh(chunk_pos);
+            }
+        }
     }
 }

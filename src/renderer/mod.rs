@@ -1,17 +1,24 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
+use wgpu::util::DeviceExt;
 use winit::window::Window;
 
 use crate::{
-    camera, gpu, hdr, light,
-    model::{self, DrawLight, DrawModel, Vertex},
-    pipeline, resources, scene, texture,
+    camera, game,
+    renderer::model::{DrawChunk, GpuChunkMesh, Vertex},
+    resources,
+    world::meshing::CpuChunkMesh,
 };
 
+pub mod gpu;
+pub mod hdr;
+pub mod model;
+pub mod pipeline;
+pub mod texture;
+
 pub struct RenderLayouts {
-    pub material: wgpu::BindGroupLayout,
+    pub chunk_material: wgpu::BindGroupLayout,
     pub camera: wgpu::BindGroupLayout,
-    pub light: wgpu::BindGroupLayout,
     pub environment: wgpu::BindGroupLayout,
 }
 
@@ -23,13 +30,15 @@ pub struct Renderer {
     is_surface_configured: bool,
     pub(crate) layouts: RenderLayouts,
 
-    render_pipeline: wgpu::RenderPipeline,
-    light_pipeline: wgpu::RenderPipeline,
+    chunk_pipeline: wgpu::RenderPipeline,
     sky_pipeline: wgpu::RenderPipeline,
 
     depth_texture: texture::Texture,
     hdr: hdr::HdrPipeline,
     environment_bind_group: wgpu::BindGroup,
+    // light: light::LightState,
+    chunk_material: model::ChunkMaterial,
+    chunk_meshes: HashMap<cgmath::Vector3<i32>, model::GpuChunkMesh>,
 }
 
 impl Renderer {
@@ -100,43 +109,28 @@ impl Renderer {
             color_space: wgpu::SurfaceColorSpace::Auto,
         };
 
-        let material_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+        let chunk_material_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-            label: Some("material_layout"),
-        });
+                ],
+                label: Some("Chunk Material Layout"),
+            });
 
         let camera_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -150,20 +144,6 @@ impl Renderer {
                 count: None,
             }],
             label: Some("camera_layout"),
-        });
-
-        let light_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-            label: None,
         });
 
         let environment_layout =
@@ -193,9 +173,9 @@ impl Renderer {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
-                    Some(&material_layout),
+                    Some(&chunk_material_layout),
                     Some(&camera_layout),
-                    Some(&light_layout),
+                    // Some(&light_layout),
                     Some(&environment_layout),
                 ],
                 immediate_size: 0,
@@ -204,41 +184,17 @@ impl Renderer {
         let hdr = hdr::HdrPipeline::new(&device, &config);
         let hdr_loader = resources::HdrLoader::new(&device);
 
-        let render_pipeline = {
+        let chunk_pipeline = {
             let shader = wgpu::ShaderModuleDescriptor {
-                label: Some("Normal Shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shader.wgsl").into()),
+                label: Some("Chunk Shader"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/chunk.wgsl").into()),
             };
             pipeline::create_render_pipeline(
                 &device,
                 &render_pipeline_layout,
                 hdr.format(),
                 Some(texture::Texture::DEPTH_FORMAT),
-                &[
-                    Some(model::ModelVertex::desc()),
-                    Some(gpu::InstanceRaw::desc()),
-                ],
-                wgpu::PrimitiveTopology::TriangleList,
-                shader,
-            )
-        };
-
-        let light_pipeline = {
-            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Light Pipeline Layout"),
-                bind_group_layouts: &[Some(&camera_layout), Some(&light_layout)],
-                immediate_size: 0,
-            });
-            let shader = wgpu::ShaderModuleDescriptor {
-                label: Some("Light Shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("shaders/light.wgsl").into()),
-            };
-            pipeline::create_render_pipeline(
-                &device,
-                &layout,
-                hdr.format(),
-                Some(texture::Texture::DEPTH_FORMAT),
-                &[Some(model::ModelVertex::desc())],
+                &[Some(model::ChunkVertex::desc())],
                 wgpu::PrimitiveTopology::TriangleList,
                 shader,
             )
@@ -250,7 +206,7 @@ impl Renderer {
                 bind_group_layouts: &[Some(&camera_layout), Some(&environment_layout)],
                 immediate_size: 0,
             });
-            let shader = wgpu::include_wgsl!("shaders/sky.wgsl");
+            let shader = wgpu::include_wgsl!("../shaders/sky.wgsl");
             pipeline::create_render_pipeline(
                 &device,
                 &layout,
@@ -290,11 +246,13 @@ impl Renderer {
         });
 
         let layouts = RenderLayouts {
-            material: material_layout,
+            chunk_material: chunk_material_layout,
             camera: camera_layout,
-            light: light_layout,
+            // light: light_layout,
             environment: environment_layout,
         };
+
+        let chunk_material = model::ChunkMaterial::new(&device, &queue, &layouts.chunk_material)?;
 
         Ok(Self {
             surface,
@@ -304,13 +262,14 @@ impl Renderer {
             is_surface_configured: false,
             layouts,
 
-            render_pipeline,
-            light_pipeline,
+            chunk_pipeline,
             sky_pipeline,
 
             depth_texture,
             hdr,
             environment_bind_group,
+            chunk_material,
+            chunk_meshes: HashMap::new(),
         })
     }
 
@@ -331,12 +290,10 @@ impl Renderer {
         }
     }
 
-    pub fn render(
-        &mut self,
-        scene: &scene::Scene,
-        camera: &camera::CameraState,
-        light: &light::LightState,
-    ) -> anyhow::Result<()> {
+    pub fn update(&mut self, dt: std::time::Duration) {
+    }
+
+    pub fn render(&mut self, camera: &camera::CameraState) -> anyhow::Result<()> {
         if !self.is_surface_configured {
             return Ok(());
         }
@@ -402,29 +359,19 @@ impl Renderer {
                 multiview_mask: None,
             });
 
-            render_pass.set_vertex_buffer(1, scene.instance_buffer.slice(..));
+            render_pass.set_pipeline(&self.chunk_pipeline);
+            render_pass.set_bind_group(0, &self.chunk_material.bind_group, &[]);
+            render_pass.set_bind_group(1, &camera.bind_group, &[]);
+            render_pass.set_bind_group(2, &self.environment_bind_group, &[]);
+
+            for chunk in self.chunk_meshes.values() {
+                render_pass.draw_chunk(chunk);
+            }
 
             render_pass.set_pipeline(&self.sky_pipeline);
             render_pass.set_bind_group(0, &camera.bind_group, &[]);
             render_pass.set_bind_group(1, &self.environment_bind_group, &[]);
             render_pass.draw(0..3, 0..1);
-
-            render_pass.set_pipeline(&self.light_pipeline);
-            render_pass.draw_light_model(
-                &scene.obj_model,
-                &camera.bind_group,
-                &light.bind_group,
-            );
-
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(3, &self.environment_bind_group, &[]);
-            render_pass.draw_model_instanced_with_material(
-                &scene.obj_model,
-                &scene.debug_material,
-                0..scene.instances.len() as u32,
-                &camera.bind_group,
-                &light.bind_group,
-            );
         }
 
         self.hdr.process(&mut encoder, &view);
@@ -434,5 +381,41 @@ impl Renderer {
         self.queue.present(output);
 
         Ok(())
+    }
+
+    pub fn upload_chunk_mesh(&mut self, chunk_pos: cgmath::Vector3<i32>, mesh: CpuChunkMesh) {
+        if mesh.indices.is_empty() {
+            self.chunk_meshes.remove(&chunk_pos);
+            return;
+        }
+
+        let vertex_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Chunk Vertex Buffer"),
+                contents: bytemuck::cast_slice(&mesh.vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+
+        let index_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Chunk Index Buffer"),
+                contents: bytemuck::cast_slice(&mesh.indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+
+        self.chunk_meshes.insert(
+            chunk_pos,
+            GpuChunkMesh {
+                vertex_buffer,
+                index_buffer,
+                num_elements: mesh.indices.len() as u32,
+            },
+        );
+    }
+
+    pub fn remove_chunk_mesh(&mut self, chunk_pos: cgmath::Vector3<i32>) {
+        self.chunk_meshes.remove(&chunk_pos);
     }
 }

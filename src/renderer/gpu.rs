@@ -115,3 +115,10 @@ pub struct LightUniform {
     pub color: [f32; 3],
     pub _padding2: u32,
 }
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct ChunkInstance {
+    pub origin: [f32; 3],
+    _padding: f32,
+}

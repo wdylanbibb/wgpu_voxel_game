@@ -94,7 +94,7 @@ impl Texture {
             size.height,
             format,
             usage,
-            wgpu::FilterMode::Linear,
+            wgpu::FilterMode::Nearest,
             label,
         );
 

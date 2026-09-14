@@ -1,16 +1,11 @@
 mod camera;
-mod hdr;
-mod model;
 mod resources;
-mod texture;
 mod app;
-mod gpu;
-mod pipeline;
 mod state;
 mod renderer;
-mod scene;
-mod light;
 mod input;
+mod world;
+mod game;
 
 pub use app::run;
 
