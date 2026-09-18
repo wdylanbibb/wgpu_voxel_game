@@ -36,7 +36,6 @@ pub struct Renderer {
     depth_texture: texture::Texture,
     hdr: hdr::HdrPipeline,
     environment_bind_group: wgpu::BindGroup,
-    // light: light::LightState,
     chunk_material: model::ChunkMaterial,
     chunk_meshes: HashMap<cgmath::Vector3<i32>, model::GpuChunkMesh>,
 }
@@ -175,7 +174,6 @@ impl Renderer {
                 bind_group_layouts: &[
                     Some(&chunk_material_layout),
                     Some(&camera_layout),
-                    // Some(&light_layout),
                     Some(&environment_layout),
                 ],
                 immediate_size: 0,
@@ -248,7 +246,6 @@ impl Renderer {
         let layouts = RenderLayouts {
             chunk_material: chunk_material_layout,
             camera: camera_layout,
-            // light: light_layout,
             environment: environment_layout,
         };
 
@@ -290,8 +287,7 @@ impl Renderer {
         }
     }
 
-    pub fn update(&mut self, dt: std::time::Duration) {
-    }
+    pub fn update(&mut self, dt: std::time::Duration) {}
 
     pub fn render(&mut self, camera: &camera::CameraState) -> anyhow::Result<()> {
         if !self.is_surface_configured {
@@ -304,7 +300,6 @@ impl Renderer {
             wgpu::CurrentSurfaceTexture::Timeout
             | wgpu::CurrentSurfaceTexture::Occluded
             | wgpu::CurrentSurfaceTexture::Validation => {
-                // Skip this frame
                 return Ok(());
             }
             wgpu::CurrentSurfaceTexture::Outdated => {
@@ -312,8 +307,6 @@ impl Renderer {
                 return Ok(());
             }
             wgpu::CurrentSurfaceTexture::Lost => {
-                // You could recreate the devices and all resources
-                // created with it here, but we'll just bail
                 anyhow::bail!("Lost device");
             }
         };
@@ -376,7 +369,6 @@ impl Renderer {
 
         self.hdr.process(&mut encoder, &view);
 
-        // submit will accept anything that implements IntoIter
         self.queue.submit(std::iter::once(encoder.finish()));
         self.queue.present(output);
 

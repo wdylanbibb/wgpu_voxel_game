@@ -989,7 +989,6 @@ dependencies = [
  "bytemuck",
  "byteorder",
  "color_quant",
- "jpeg-decoder",
  "num-traits",
  "png",
 ]
@@ -1106,12 +1105,6 @@ dependencies = [
  "getrandom 0.4.3",
  "libc",
 ]
-
-[[package]]
-name = "jpeg-decoder"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00810f1d8b74be64b13dbf3db89ac67740615d6c891f0e7b6179326533011a07"
 
 [[package]]
 name = "js-sys"
@@ -2530,12 +2523,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tobj"
-version = "3.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57381207291289bad19de63acd3fbf5948ff99b2868116c367b7224c37d55f90"
-
-[[package]]
 name = "tokio"
 version = "1.53.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3096,7 +3083,6 @@ dependencies = [
  "log",
  "pollster",
  "reqwest",
- "tobj",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
