@@ -8,6 +8,11 @@ pub struct Chunk {
 }
 
 impl Chunk {
+    pub fn new() -> Self {
+        Self {
+            blocks: Box::new([BlockId::Air; CHUNK_VOLUME]),
+        }
+    }
     pub fn from_blocks(blocks: Box<[BlockId; CHUNK_VOLUME]>) -> Self {
         Self { blocks }
     }

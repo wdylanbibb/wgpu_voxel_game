@@ -2,13 +2,13 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
-use cgmath::num_traits::Euclid;
 
 use crate::world::{block::BlockId, chunk::{CHUNK_SIZE, Chunk}};
 
 pub mod block;
 pub mod chunk;
 pub mod meshing;
+pub mod generation;
 
 pub struct World {
     chunks: HashMap<cgmath::Vector3<i32>, Chunk>,

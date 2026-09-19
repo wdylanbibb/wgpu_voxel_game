@@ -4,7 +4,7 @@ use wgpu::util::DeviceExt;
 use winit::window::Window;
 
 use crate::{
-    camera, game,
+    camera,
     renderer::model::{DrawChunk, GpuChunkMesh, Vertex},
     resources,
     world::meshing::CpuChunkMesh,
@@ -107,6 +107,12 @@ impl Renderer {
             desired_maximum_frame_latency: 2,
             color_space: wgpu::SurfaceColorSpace::Auto,
         };
+
+        let is_surface_configured = size.width > 0 && size.height > 0;
+
+        if is_surface_configured {
+            surface.configure(&device, &config);
+        }
 
         let chunk_material_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -256,7 +262,7 @@ impl Renderer {
             device,
             queue,
             config,
-            is_surface_configured: false,
+            is_surface_configured,
             layouts,
 
             chunk_pipeline,
@@ -271,20 +277,31 @@ impl Renderer {
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
-        if width > 0 && height > 0 {
-            let max = 2048;
-            self.config.width = width.min(max);
-            self.config.height = height.min(max);
-
-            self.hdr
-                .resize(&self.device, self.config.width, self.config.height);
-
-            self.depth_texture =
-                texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
-
-            self.surface.configure(&self.device, &self.config);
-            self.is_surface_configured = true;
+        if width == 0 || height == 0 {
+            self.is_surface_configured = false;
+            return;
         }
+
+        const MAX_RENDER_DIMENSION: u32 = 2048;
+
+        let width = width.min(MAX_RENDER_DIMENSION);
+        let height = height.min(MAX_RENDER_DIMENSION);
+
+        if self.is_surface_configured && self.config.width == width && self.config.height == height
+        {
+            return;
+        }
+
+        self.config.width = width;
+        self.config.height = height;
+
+        self.surface.configure(&self.device, &self.config);
+
+        self.hdr.resize(&self.device, width, height);
+        self.depth_texture =
+            texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
+
+        self.is_surface_configured = true;
     }
 
     pub fn update(&mut self, dt: std::time::Duration) {}

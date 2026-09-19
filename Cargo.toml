@@ -18,6 +18,7 @@ pollster = "0.3"
 bytemuck = { version = "1.24", features = [ "derive" ] }
 cgmath = "0.18"
 instant = "0.1"
+noise = "0.9"
 
 [dependencies.image]
 version = "0.24"

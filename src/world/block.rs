@@ -19,6 +19,8 @@ pub enum BlockId {
     Grass = 1,
     Dirt = 2,
     Stone = 3,
+    Sand = 4,
+    Snow = 5,
 }
 
 pub struct BlockDefinition {
@@ -63,6 +65,26 @@ impl BlockId {
                     top: AtlasTile { x: 3, y: 0 },
                     side: AtlasTile { x: 3, y: 0 },
                     bottom: AtlasTile { x: 3, y: 0 },
+                }),
+            },
+
+            Self::Sand => BlockDefinition {
+                solid: true,
+                opaque: true,
+                textures: Some(BlockTextures {
+                    top: AtlasTile { x: 4, y: 0 },
+                    side: AtlasTile { x: 4, y: 0 },
+                    bottom: AtlasTile { x: 4, y: 0 },
+                }),
+            },
+
+            Self::Snow => BlockDefinition {
+                solid: true,
+                opaque: true,
+                textures: Some(BlockTextures {
+                    top: AtlasTile { x: 5, y: 0 },
+                    side: AtlasTile { x: 6, y: 0 },
+                    bottom: AtlasTile { x: 2, y: 0 },
                 }),
             },
         }

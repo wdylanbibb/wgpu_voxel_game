@@ -9,7 +9,11 @@ use winit::{
 
 use crate::{
     camera, game, input, renderer,
-    world::{self, World, meshing::mesh_chunk},
+    world::{
+        World,
+        generation::{self},
+        meshing::mesh_chunk,
+    },
 };
 
 pub struct State {
@@ -28,30 +32,26 @@ impl State {
             world: {
                 let mut chunks = HashMap::new();
 
-                let mut chunk = world::chunk::Chunk::from_blocks(Box::new(
-                    [world::block::BlockId::Air; world::chunk::CHUNK_VOLUME],
-                ));
+                let generator = generation::TerrainGenerator::new(
+                    1337,
+                    generation::TerrainConfig {
+                        base_height: 4,
+                        height_amplitude: 12,
+                        soil_depth: 3,
+                    },
+                );
 
-                for x in 0..world::chunk::CHUNK_SIZE {
-                    for y in 0..world::chunk::CHUNK_SIZE {
-                        for z in 0..world::chunk::CHUNK_SIZE {
-                            let block = if y == (world::chunk::CHUNK_SIZE - 1) {
-                                world::block::BlockId::Grass
-                            } else {
-                                if y < (world::chunk::CHUNK_SIZE - 4) {
-                                    world::block::BlockId::Stone
-                                } else {
-                                    world::block::BlockId::Dirt
-                                }
-                            };
-                            chunk.set(x, y, z, block);
+                for x in -4..4 {
+                    for y in -2..2 {
+                        for z in -4..4 {
+                            let chunk_pos = cgmath::Vector3::new(x, y, z);
+
+                            let chunk = generator.generate_chunk(chunk_pos);
+
+                            chunks.insert(chunk_pos, chunk);
                         }
                     }
                 }
-
-                chunk.set(8, 15, 8, world::block::BlockId::Air);
-
-                chunks.insert(cgmath::Vector3::new(0, -1, 0), chunk);
 
                 World::from_chunks(chunks)
             },

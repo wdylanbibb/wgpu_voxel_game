@@ -59,7 +59,9 @@ impl ApplicationHandler<State> for App {
         {
             // If we are not on web we can use pollster to
             // await the window creation
-            self.state = Some(pollster::block_on(State::new(window)).unwrap());
+            let state = pollster::block_on(State::new(window.clone())).unwrap();
+            window.request_redraw();
+            self.state = Some(state);
         }
 
         #[cfg(target_arch = "wasm32")]
