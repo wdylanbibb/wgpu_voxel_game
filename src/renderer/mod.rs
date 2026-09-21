@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
+use cgmath::InnerSpace;
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
@@ -171,6 +172,16 @@ impl Renderer {
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
                 ],
             });
 
@@ -234,6 +245,21 @@ impl Renderer {
             Some("Sky Texture"),
         )?;
 
+        let sun_direction = cgmath::Vector3::new(0.4, 0.8, 0.2).normalize();
+
+        let sun_uniform = gpu::SunUniform {
+            direction: sun_direction.into(),
+            intensity: 1.0,
+            color: [1.0, 0.95, 0.85],
+            ambient: 0.25,
+        };
+
+        let sun_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Sun Uniform Buffer"),
+            contents: bytemuck::bytes_of(&sun_uniform),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
         let environment_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("environment_bind_group"),
             layout: &environment_layout,
@@ -245,6 +271,10 @@ impl Renderer {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(sky_texture.sampler()),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: sun_buffer.as_entire_binding(),
                 },
             ],
         });

@@ -89,4 +89,16 @@ impl BlockId {
             },
         }
     }
+
+    pub const fn solid(self) -> bool {
+        self.definition().solid
+    }
+
+    pub const fn opaque(self) -> bool {
+        self.definition().opaque
+    }
+
+    pub const fn textures(self) -> Option<BlockTextures> {
+        self.definition().textures
+    }
 }

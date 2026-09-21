@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use winit::{
     event::{MouseButton, MouseScrollDelta},
@@ -7,14 +7,9 @@ use winit::{
     window::Window,
 };
 
-use crate::{
-    camera, game, input, renderer,
-    world::{
-        World,
-        generation::{self},
-        meshing::mesh_chunk,
-    },
-};
+use crate::{camera, game, input, player, renderer, world::meshing::mesh_chunk};
+
+const MAX_PHYSICS_STEPS_PER_FRAME: usize = 8;
 
 pub struct State {
     window: Arc<Window>,
@@ -22,47 +17,27 @@ pub struct State {
     game: game::Game,
     camera: camera::CameraState,
     input: input::InputState,
+    physics_accumulator: f32,
 }
 
 impl State {
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
         let renderer = renderer::Renderer::new(window.clone()).await?;
 
-        let game = game::Game {
-            world: {
-                let mut chunks = HashMap::new();
+        let game = game::Game::new(cgmath::Vector3::new(
+            (-4..4).into(),
+            (-2..2).into(),
+            (-4..4).into(),
+        ));
 
-                let generator = generation::TerrainGenerator::new(
-                    1337,
-                    generation::TerrainConfig {
-                        base_height: 4,
-                        height_amplitude: 12,
-                        soil_depth: 3,
-                    },
-                );
-
-                for x in -4..4 {
-                    for y in -2..2 {
-                        for z in -4..4 {
-                            let chunk_pos = cgmath::Vector3::new(x, y, z);
-
-                            let chunk = generator.generate_chunk(chunk_pos);
-
-                            chunks.insert(chunk_pos, chunk);
-                        }
-                    }
-                }
-
-                World::from_chunks(chunks)
-            },
-        };
-
-        let camera = camera::CameraState::new(
+        let mut camera = camera::CameraState::new(
             &renderer.device,
             &renderer.layouts.camera,
             renderer.config.width,
             renderer.config.height,
         );
+
+        camera.set_position(game.player.eye_position());
 
         let input = input::InputState::default();
 
@@ -72,6 +47,7 @@ impl State {
             game,
             camera,
             input,
+            physics_accumulator: 0.0,
         })
     }
 
@@ -84,11 +60,34 @@ impl State {
     }
 
     pub fn update(&mut self, dt: std::time::Duration) {
-        self.game.update(dt);
+        self.camera.update_look(dt);
+
+        let movement = self.input.movement();
+        let (forward, right) = self.camera.horizonal_basis();
+
+        self.physics_accumulator += dt.as_secs_f32().min(0.1);
+
+        let mut steps = 0;
+        while self.physics_accumulator >= player::FIXED_TIMESTEP
+            && steps < MAX_PHYSICS_STEPS_PER_FRAME
+        {
+            let jump = self.input.take_jump();
+            self.game
+                .update(player::FIXED_TIMESTEP, movement, forward, right, jump);
+            self.physics_accumulator -= player::FIXED_TIMESTEP;
+            steps += 1;
+        }
+
+        if steps == MAX_PHYSICS_STEPS_PER_FRAME
+            && self.physics_accumulator >= player::FIXED_TIMESTEP
+        {
+            self.physics_accumulator = 0.0;
+        }
+
+        self.camera.set_position(self.game.player.eye_position());
+        self.camera.upload(&self.renderer.queue);
 
         self.sync_chunk_meshes();
-
-        self.camera.update(&self.renderer.queue, dt);
         self.renderer.update(dt);
     }
 
@@ -99,7 +98,7 @@ impl State {
     }
 
     pub fn handle_key(&mut self, event_loop: &ActiveEventLoop, key: KeyCode, pressed: bool) {
-        if self.camera.handle_key(key, pressed) {
+        if self.input.handle_key(key, pressed) {
             return;
         }
 

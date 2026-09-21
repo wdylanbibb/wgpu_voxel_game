@@ -6,6 +6,7 @@ mod renderer;
 mod input;
 mod world;
 mod game;
+mod player;
 
 pub use app::run;
 

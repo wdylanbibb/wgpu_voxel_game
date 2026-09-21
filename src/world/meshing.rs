@@ -108,6 +108,7 @@ fn make_vertex(
     face_corner: [f32; 3],
     origin: [f32; 3],
     tex_coord: [f32; 2],
+    normal: [f32; 3],
 ) -> ChunkVertex {
     ChunkVertex {
         position: [
@@ -116,6 +117,7 @@ fn make_vertex(
             origin[2] + block_position[2] as f32 + face_corner[2],
         ],
         tex_coord,
+        normal,
     }
 }
 
@@ -174,9 +176,20 @@ fn emit_face(
 ) {
     let first_vertex = vertices.len() as u32;
     let uvs = atlas_uvs(tile);
+    let normal = [
+        face.neighbor[0] as f32,
+        face.neighbor[1] as f32,
+        face.neighbor[2] as f32,
+    ];
 
     for (corner, tex_coord) in face.corners.iter().zip(uvs) {
-        vertices.push(make_vertex(block_position, *corner, origin, tex_coord));
+        vertices.push(make_vertex(
+            block_position,
+            *corner,
+            origin,
+            tex_coord,
+            normal,
+        ));
     }
 
     indices.extend_from_slice(&[

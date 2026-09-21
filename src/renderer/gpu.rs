@@ -34,3 +34,12 @@ impl CameraUniform {
         self.inv_view = view.transpose().into();
     }
 }
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct SunUniform {
+    pub direction: [f32; 3],
+    pub intensity: f32,
+    pub color: [f32; 3],
+    pub ambient: f32,
+}

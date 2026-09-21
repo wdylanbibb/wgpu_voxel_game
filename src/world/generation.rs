@@ -100,8 +100,9 @@ impl TerrainGenerator {
         for x in 0..CHUNK_SIZE {
             for y in 0..CHUNK_SIZE {
                 for z in 0..CHUNK_SIZE {
-                    let world =
-                        chunk_pos.mul_element_wise(16).add_element_wise(Vector3::new(x as i32, y as i32, z as i32));
+                    let world = chunk_pos
+                        .mul_element_wise(16)
+                        .add_element_wise(Vector3::new(x as i32, y as i32, z as i32));
 
                     let surface = self.surface_height(world.x, world.z);
 

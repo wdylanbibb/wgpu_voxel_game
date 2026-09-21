@@ -53,12 +53,13 @@ impl ChunkMaterial {
 pub struct ChunkVertex {
     pub position: [f32; 3],
     pub tex_coord: [f32; 2],
+    pub normal: [f32; 3],
 }
 
 impl Vertex for ChunkVertex {
     fn desc() -> wgpu::VertexBufferLayout<'static> {
-        static ATTRIBS: [wgpu::VertexAttribute; 2] =
-            wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2];
+        static ATTRIBS: [wgpu::VertexAttribute; 3] =
+            wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Float32x3];
         wgpu::VertexBufferLayout {
             array_stride: mem::size_of::<ChunkVertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
