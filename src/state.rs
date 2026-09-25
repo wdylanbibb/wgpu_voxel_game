@@ -128,10 +128,16 @@ impl State {
         self.window.request_redraw();
 
         self.renderer.render(
+            &self.window,
             &self.camera,
             self.targeted_block,
             self.input.cursor_captured,
+            PLACEABLE_BLOCKS[self.selected_block],
         )
+    }
+
+    pub fn handle_window_event(&mut self, event: &winit::event::WindowEvent) {
+        self.renderer.handle_window_event(&self.window, event);
     }
 
     pub fn handle_key(&mut self, event_loop: &ActiveEventLoop, key: KeyCode, pressed: bool) {

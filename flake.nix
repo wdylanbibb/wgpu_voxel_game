@@ -28,7 +28,7 @@
         name = "wgpu-voxel-game-web";
         runtimeInputs = with pkgs; [ cargo rustc trunk binaryen lld ];
         text = ''
-          exec trunk serve --open "$@"
+          NO_COLOR=false exec trunk serve --open "$@"
         '';
       };
       nativePackage = pkgs.rustPlatform.buildRustPackage {
@@ -54,7 +54,7 @@
 
         buildPhase = ''
           runHook preBuild
-          trunk build --release --dist "$NIX_BUILD_TOP/dist"
+          NO_COLOR=false trunk build --release --dist "$NIX_BUILD_TOP/dist"
           runHook postBuild
         '';
 

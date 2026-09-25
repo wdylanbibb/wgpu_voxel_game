@@ -7,6 +7,7 @@ mod raycast;
 mod renderer;
 mod resources;
 mod state;
+mod ui;
 mod world;
 
 pub use app::run;

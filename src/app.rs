@@ -126,6 +126,8 @@ impl ApplicationHandler<State> for App {
             None => return,
         };
 
+        state.handle_window_event(&event);
+
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => state.resize(size.width, size.height),

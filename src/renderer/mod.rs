@@ -7,8 +7,11 @@ use winit::window::Window;
 use crate::{
     camera,
     renderer::model::{DrawChunk, GpuChunkMesh, Vertex},
-    resources,
-    world::meshing::CpuChunkMesh,
+    resources, ui,
+    world::{
+        block::{AtlasTile, BlockId},
+        meshing::CpuChunkMesh,
+    },
 };
 
 const OUTLINE_VERTICES: [[f32; 3]; 8] = [
@@ -25,6 +28,121 @@ const OUTLINE_INDICES: [u16; 24] = [
     0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7,
 ];
 const OUTLINE_ATTRIBUTES: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x3];
+const ATLAS_SIZE: f32 = 256.0;
+const TILE_SIZE: f32 = 16.0;
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct PreviewVertex {
+    position: [f32; 3],
+    tex_coord: [f32; 2],
+    brightness: f32,
+}
+
+impl Vertex for PreviewVertex {
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        static ATTRIBUTES: [wgpu::VertexAttribute; 3] =
+            wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Float32];
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<PreviewVertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &ATTRIBUTES,
+        }
+    }
+}
+
+fn atlas_uvs(tile: AtlasTile) -> [[f32; 2]; 4] {
+    let inset = 0.5;
+    let u_min = (tile.x as f32 * TILE_SIZE + inset) / ATLAS_SIZE;
+    let v_min = (tile.y as f32 * TILE_SIZE + inset) / ATLAS_SIZE;
+    let u_max = ((tile.x as f32 + 1.0) * TILE_SIZE - inset) / ATLAS_SIZE;
+    let v_max = ((tile.y as f32 + 1.0) * TILE_SIZE - inset) / ATLAS_SIZE;
+    [
+        [u_min, v_max],
+        [u_min, v_min],
+        [u_max, v_min],
+        [u_max, v_max],
+    ]
+}
+
+fn preview_vertices(block: BlockId) -> Vec<PreviewVertex> {
+    let textures = block.textures().expect("preview block must have textures");
+    let faces = [
+        (
+            [
+                [1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [1.0, 1.0, 1.0],
+                [1.0, 0.0, 1.0],
+            ],
+            textures.side,
+            0.55,
+        ),
+        (
+            [
+                [0.0, 0.0, 1.0],
+                [0.0, 1.0, 1.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0],
+            ],
+            textures.side,
+            0.45,
+        ),
+        (
+            [
+                [0.0, 1.0, 0.0],
+                [0.0, 1.0, 1.0],
+                [1.0, 1.0, 1.0],
+                [1.0, 1.0, 0.0],
+            ],
+            textures.top,
+            1.0,
+        ),
+        (
+            [
+                [0.0, 0.0, 1.0],
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0],
+            ],
+            textures.bottom,
+            0.35,
+        ),
+        (
+            [
+                [1.0, 0.0, 1.0],
+                [1.0, 1.0, 1.0],
+                [0.0, 1.0, 1.0],
+                [0.0, 0.0, 1.0],
+            ],
+            textures.side,
+            0.75,
+        ),
+        (
+            [
+                [0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [1.0, 0.0, 0.0],
+            ],
+            textures.side,
+            0.5,
+        ),
+    ];
+    let mut vertices = Vec::with_capacity(36);
+    for (corners, tile, brightness) in faces {
+        let uvs = atlas_uvs(tile);
+        for index in [0, 1, 2, 0, 2, 3] {
+            let corner = corners[index];
+            vertices.push(PreviewVertex {
+                position: [corner[0] - 0.5, corner[1] - 0.5, corner[2] - 0.5],
+                tex_coord: uvs[index],
+                brightness,
+            });
+        }
+    }
+    vertices
+}
 
 pub mod gpu;
 pub mod hdr;
@@ -50,6 +168,11 @@ pub struct Renderer {
     sky_pipeline: wgpu::RenderPipeline,
     outline_pipeline: wgpu::RenderPipeline,
     crosshair_pipeline: wgpu::RenderPipeline,
+    preview_pipeline: wgpu::RenderPipeline,
+    egui_context: egui::Context,
+    #[cfg(not(target_arch = "wasm32"))]
+    egui_state: egui_winit::State,
+    egui_renderer: egui_wgpu::Renderer,
 
     depth_texture: texture::Texture,
     hdr: hdr::HdrPipeline,
@@ -60,6 +183,10 @@ pub struct Renderer {
     outline_index_buffer: wgpu::Buffer,
     outline_target_buffer: wgpu::Buffer,
     outline_target_bind_group: wgpu::BindGroup,
+    preview_vertex_buffer: wgpu::Buffer,
+    preview_texture: texture::Texture,
+    preview_depth_texture: texture::Texture,
+    preview_texture_id: egui::TextureId,
 }
 
 impl Renderer {
@@ -340,6 +467,23 @@ impl Renderer {
             )
         };
 
+        let preview_pipeline = {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Block Preview Pipeline Layout"),
+                bind_group_layouts: &[Some(&chunk_material_layout)],
+                immediate_size: 0,
+            });
+            pipeline::create_render_pipeline(
+                &device,
+                &layout,
+                wgpu::TextureFormat::Rgba8Unorm,
+                Some(texture::Texture::DEPTH_FORMAT),
+                &[Some(PreviewVertex::desc())],
+                wgpu::PrimitiveTopology::TriangleList,
+                wgpu::include_wgsl!("../shaders/block_preview.wgsl"),
+            )
+        };
+
         let depth_texture =
             texture::Texture::create_depth_texture(&device, &config, "depth_texture");
 
@@ -416,6 +560,49 @@ impl Renderer {
                 resource: outline_target_buffer.as_entire_binding(),
             }],
         });
+        let preview_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Block Preview Vertex Buffer"),
+            contents: bytemuck::cast_slice(&preview_vertices(BlockId::Dirt)),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+        let preview_texture = texture::Texture::create_2d_texture(
+            &device,
+            128,
+            128,
+            wgpu::TextureFormat::Rgba8Unorm,
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            wgpu::FilterMode::Nearest,
+            Some("Selected Block Preview"),
+        );
+        let preview_depth_texture = texture::Texture::create_2d_texture(
+            &device,
+            128,
+            128,
+            texture::Texture::DEPTH_FORMAT,
+            wgpu::TextureUsages::RENDER_ATTACHMENT,
+            wgpu::FilterMode::Nearest,
+            Some("Selected Block Preview Depth"),
+        );
+        let egui_context = egui::Context::default();
+        #[cfg(not(target_arch = "wasm32"))]
+        let egui_state = egui_winit::State::new(
+            egui_context.clone(),
+            egui::ViewportId::ROOT,
+            window.as_ref(),
+            Some(window.scale_factor() as f32),
+            None,
+            None,
+        );
+        let mut egui_renderer = egui_wgpu::Renderer::new(
+            &device,
+            config.format.add_srgb_suffix(),
+            egui_wgpu::RendererOptions::default(),
+        );
+        let preview_texture_id = egui_renderer.register_native_texture(
+            &device,
+            &preview_texture.view,
+            wgpu::FilterMode::Nearest,
+        );
 
         Ok(Self {
             surface,
@@ -429,6 +616,11 @@ impl Renderer {
             sky_pipeline,
             outline_pipeline,
             crosshair_pipeline,
+            preview_pipeline,
+            egui_context,
+            #[cfg(not(target_arch = "wasm32"))]
+            egui_state,
+            egui_renderer,
 
             depth_texture,
             hdr,
@@ -439,6 +631,10 @@ impl Renderer {
             outline_index_buffer,
             outline_target_buffer,
             outline_target_bind_group,
+            preview_vertex_buffer,
+            preview_texture,
+            preview_depth_texture,
+            preview_texture_id,
         })
     }
 
@@ -474,9 +670,11 @@ impl Renderer {
 
     pub fn render(
         &mut self,
+        window: &Window,
         camera: &camera::CameraState,
         targeted_block: Option<cgmath::Vector3<i32>>,
         show_crosshair: bool,
+        selected_block: BlockId,
     ) -> anyhow::Result<()> {
         if !self.is_surface_configured {
             return Ok(());
@@ -521,6 +719,41 @@ impl Renderer {
                     0.0,
                 ]]),
             );
+        }
+        self.queue.write_buffer(
+            &self.preview_vertex_buffer,
+            0,
+            bytemuck::cast_slice(&preview_vertices(selected_block)),
+        );
+
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Block Preview Texture Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &self.preview_texture.view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.preview_depth_texture.view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Discard,
+                    }),
+                    stencil_ops: None,
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.preview_pipeline);
+            pass.set_bind_group(0, &self.chunk_material.bind_group, &[]);
+            pass.set_vertex_buffer(0, self.preview_vertex_buffer.slice(..));
+            pass.draw(0..36, 0..1);
         }
 
         {
@@ -603,7 +836,85 @@ impl Renderer {
             pass.draw(0..12, 0..1);
         }
 
-        self.queue.submit(std::iter::once(encoder.finish()));
+        #[cfg(not(target_arch = "wasm32"))]
+        let raw_input = self.egui_state.take_egui_input(window);
+        #[cfg(target_arch = "wasm32")]
+        let raw_input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(
+                    self.config.width as f32 / window.scale_factor() as f32,
+                    self.config.height as f32 / window.scale_factor() as f32,
+                ),
+            )),
+            ..Default::default()
+        };
+        let preview_size = (self.config.width.min(self.config.height) as f32
+            / window.scale_factor() as f32
+            * 0.16)
+            .clamp(64.0, 192.0);
+        let mut full_output = self.egui_context.run_ui(raw_input, |root_ui| {
+            ui::show_selected_block_preview(
+                root_ui.ctx(),
+                self.preview_texture_id,
+                selected_block,
+                preview_size,
+            );
+        });
+        #[cfg(not(target_arch = "wasm32"))]
+        self.egui_state
+            .handle_platform_output(window, full_output.platform_output);
+        let pixels_per_point = full_output.pixels_per_point;
+        let paint_jobs = self
+            .egui_context
+            .tessellate(full_output.shapes, pixels_per_point);
+        let mut textures_delta = std::mem::take(&mut full_output.textures_delta);
+        for (id, image_deltas) in textures_delta.set.drain() {
+            for image_delta in image_deltas {
+                self.egui_renderer
+                    .update_texture(&self.device, &self.queue, id, &image_delta);
+            }
+        }
+        let screen_descriptor = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: [self.config.width, self.config.height],
+            pixels_per_point,
+        };
+        let egui_commands = self.egui_renderer.update_buffers(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &paint_jobs,
+            &screen_descriptor,
+        );
+        {
+            let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("egui Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+                multiview_mask: None,
+            });
+            self.egui_renderer
+                .render(&mut pass.forget_lifetime(), &paint_jobs, &screen_descriptor);
+        }
+        for id in textures_delta.free.drain() {
+            self.egui_renderer.free_texture(&id);
+        }
+
+        self.queue.submit(
+            egui_commands
+                .into_iter()
+                .chain(std::iter::once(encoder.finish())),
+        );
         self.queue.present(output);
 
         Ok(())
@@ -643,5 +954,10 @@ impl Renderer {
 
     pub fn remove_chunk_mesh(&mut self, chunk_pos: cgmath::Vector3<i32>) {
         self.chunk_meshes.remove(&chunk_pos);
+    }
+
+    pub fn handle_window_event(&mut self, _window: &Window, _event: &winit::event::WindowEvent) {
+        #[cfg(not(target_arch = "wasm32"))]
+        let _ = self.egui_state.on_window_event(_window, _event);
     }
 }
