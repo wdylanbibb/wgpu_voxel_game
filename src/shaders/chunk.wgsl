@@ -14,12 +14,14 @@ struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) tex_coords: vec2<f32>,
     @location(2) normal: vec3<f32>,
+    @location(3) atlas_tile: vec2<f32>,
 };
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
     @location(1) world_normal: vec3<f32>,
+    @location(2) @interpolate(flat) atlas_tile: vec2<f32>,
 };
 
 @vertex
@@ -32,6 +34,7 @@ fn vs_main(
 
     output.tex_coords = input.tex_coords;
     output.world_normal = input.normal;
+    output.atlas_tile = input.atlas_tile;
 
     return output;
 }
@@ -54,7 +57,9 @@ var<uniform> sun: Sun;
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let albedo = textureSample(t_diffuse, s_diffuse, input.tex_coords);
+    let atlas_grid_size = vec2<f32>(16.0, 16.0);
+    let atlas_uv = (input.atlas_tile + fract(input.tex_coords)) / atlas_grid_size;
+    let albedo = textureSample(t_diffuse, s_diffuse, atlas_uv);
 
     let normal = normalize(input.world_normal);
     let light_direction = normalize(sun.direction);
