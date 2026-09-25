@@ -7,6 +7,7 @@ mod input;
 mod world;
 mod game;
 mod player;
+mod raycast;
 
 pub use app::run;
 

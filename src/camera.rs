@@ -138,8 +138,8 @@ impl CameraController {
     }
 
     pub fn handle_mouse(&mut self, mouse_dx: f64, mouse_dy: f64) {
-        self.rotate_horizontal = mouse_dx as f32;
-        self.rotate_vertical = mouse_dy as f32;
+        self.rotate_horizontal += mouse_dx as f32;
+        self.rotate_vertical += mouse_dy as f32;
     }
 
     pub fn handle_scroll(&mut self, delta: &MouseScrollDelta) {
@@ -166,8 +166,10 @@ impl CameraController {
 
         camera.position.y += (self.amount_up - self.amount_down) * self.speed * dt;
 
-        camera.yaw += Rad(self.rotate_horizontal) * self.sensitivity * dt;
-        camera.pitch += Rad(-self.rotate_vertical) * self.sensitivity * dt;
+        camera.yaw += Rad(self.rotate_horizontal * self.sensitivity);
+        camera.pitch += Rad(-self.rotate_vertical * self.sensitivity);
+
+        log::warn!("Yaw: {:?}\t Pitch: {:?}", camera.yaw, camera.pitch);
 
         self.rotate_horizontal = 0.0;
         self.rotate_vertical = 0.0;
@@ -179,22 +181,27 @@ impl CameraController {
         }
     }
 
-    pub fn update_rotation(&mut self, camera: &mut Camera, dt: Duration) {
-        let dt = dt.as_secs_f32();
+    pub fn update_rotation(&mut self, camera: &mut Camera) {
+        camera.yaw += Rad(self.rotate_horizontal * self.sensitivity);
 
-        camera.yaw += Rad(self.rotate_horizontal) * self.sensitivity * dt;
-
-        camera.pitch += Rad(-self.rotate_vertical) * self.sensitivity * dt;
+        camera.pitch += Rad(-self.rotate_vertical * self.sensitivity);
 
         self.rotate_horizontal = 0.0;
         self.rotate_vertical = 0.0;
 
-        if camera.pitch < -Rad(SAFE_FRAC_PI_2) {
-            camera.pitch = -Rad(SAFE_FRAC_PI_2);
-        } else if camera.pitch > Rad(SAFE_FRAC_PI_2) {
-            camera.pitch = Rad(SAFE_FRAC_PI_2);
-        }
+        // if camera.pitch < -Rad(SAFE_FRAC_PI_2) {
+        //     camera.pitch = -Rad(SAFE_FRAC_PI_2);
+        // } else if camera.pitch > Rad(SAFE_FRAC_PI_2) {
+        //     camera.pitch = Rad(SAFE_FRAC_PI_2);
+        // }
+
+        camera.pitch.0 = camera.pitch.0.clamp(-SAFE_FRAC_PI_2, SAFE_FRAC_PI_2);
     }
+}
+
+pub struct Ray {
+    pub origin: cgmath::Point3<f32>,
+    pub direction: cgmath::Vector3<f32>,
 }
 
 pub struct CameraState {
@@ -215,7 +222,7 @@ impl CameraState {
     ) -> Self {
         let camera = Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
         let projection = Projection::new(width, height, cgmath::Deg(45.0), 0.1, 100.0);
-        let controller = CameraController::new(4.0, 0.4);
+        let controller = CameraController::new(4.0, 0.002);
 
         let mut uniform = gpu::CameraUniform::new();
         uniform.update_view_proj(&camera, &projection);
@@ -258,7 +265,7 @@ impl CameraState {
     }
 
     pub fn update_look(&mut self, dt: Duration) {
-        self.controller.update_rotation(&mut self.camera, dt);
+        self.controller.update_rotation(&mut self.camera);
     }
 
     pub fn upload(&mut self, queue: &wgpu::Queue) {

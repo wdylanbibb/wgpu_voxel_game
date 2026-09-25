@@ -4,7 +4,7 @@ use winit::{
     event::{MouseButton, MouseScrollDelta},
     event_loop::ActiveEventLoop,
     keyboard::KeyCode,
-    window::Window,
+    window::{CursorGrabMode, Window},
 };
 
 use crate::{camera, game, input, player, renderer, world::meshing::mesh_chunk};
@@ -103,24 +103,73 @@ impl State {
         }
 
         if key == KeyCode::Escape && pressed {
-            event_loop.exit();
+            if self.input.cursor_captured {
+                self.release_cursor();
+            } else {
+                event_loop.exit();
+            }
         }
     }
 
     pub fn handle_mouse_button(&mut self, button: MouseButton, pressed: bool) {
-        if button == MouseButton::Left {
-            self.input.mouse_pressed = pressed;
+        if !pressed {
+            return;
+        }
+
+        if !self.input.cursor_captured {
+            self.capture_cursor();
+            return;
+        }
+
+        match button {
+            MouseButton::Left => {
+                self.input.queue_break();
+            }
+            MouseButton::Right => {
+                self.input.queue_place();
+            }
+            _ => {}
         }
     }
 
     pub fn handle_mouse_motion(&mut self, dx: f64, dy: f64) {
-        if self.input.mouse_pressed {
+        if self.input.cursor_captured {
             self.camera.handle_mouse(dx, dy);
         }
     }
 
     pub fn handle_mouse_scroll(&mut self, delta: &MouseScrollDelta) {
         self.camera.handle_scroll(delta);
+    }
+
+    pub fn capture_cursor(&mut self) {
+        let result = self
+            .window
+            .set_cursor_grab(CursorGrabMode::Locked)
+            .or_else(|_| self.window.set_cursor_grab(CursorGrabMode::Confined));
+
+        match result {
+            Ok(()) => {
+                self.window.set_cursor_visible(false);
+                self.input.cursor_captured = true;
+            }
+            Err(error) => {
+                log::warn!("Could not capture cursor: {error}");
+            }
+        }
+    }
+
+    pub fn release_cursor(&mut self) {
+        if let Err(error) = self.window.set_cursor_grab(CursorGrabMode::None) {
+            log::warn!("Could not release cursor: {error}");
+        }
+
+        self.window.set_cursor_visible(true);
+        self.input.cursor_captured = false;
+    }
+
+    pub fn cursor_captured(&self) -> bool {
+        self.input.cursor_captured
     }
 
     pub fn window(&self) -> &Window {

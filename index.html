@@ -14,6 +14,13 @@
     </style>
   </head>
   <body>
-    <canvas id="canvas"></canvas>
+    <canvas id="canvas" tabindex="0"></canvas>
+    <script>
+      const canvas = document.getElementbyId("canvas");
+
+      canvas.addEventListener("contextmenu", event => {
+        event.preventDefault();
+      });
+    </script>
   </body>
 </html>

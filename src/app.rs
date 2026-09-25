@@ -158,6 +158,9 @@ impl ApplicationHandler<State> for App {
                     },
                 ..
             } => state.handle_key(event_loop, code, key_state.is_pressed()),
+            WindowEvent::Focused(false) => {
+                state.release_cursor();
+            }
             _ => {}
         }
     }

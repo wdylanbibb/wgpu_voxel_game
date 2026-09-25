@@ -2,7 +2,8 @@ use winit::keyboard::KeyCode;
 
 #[derive(Default)]
 pub struct InputState {
-    pub(crate) mouse_pressed: bool,
+    pub mouse_pressed: bool,
+    pub cursor_captured: bool,
     forward: bool,
     backward: bool,
     left: bool,
@@ -51,4 +52,8 @@ impl InputState {
     pub fn take_jump(&mut self) -> bool {
         std::mem::take(&mut self.jump_queued)
     }
+
+    pub fn queue_break(&self) {}
+
+    pub fn queue_place(&self) {}
 }
