@@ -1,6 +1,9 @@
 use cgmath::InnerSpace;
 
-use crate::{camera::Ray, world::{World, block::BlockId}};
+use crate::{
+    camera::Ray,
+    world::{World, block::BlockId},
+};
 
 const DIRECTION_EPSILON: f32 = 1.0e-6;
 
@@ -53,6 +56,10 @@ pub fn raycast(world: &World, ray: Ray, max_distance: f32) -> Option<RayHit> {
         return None;
     }
 
+    if ray.direction.magnitude2() <= DIRECTION_EPSILON * DIRECTION_EPSILON {
+        return None;
+    }
+
     let direction = ray.direction.normalize();
 
     let mut cell = cgmath::Vector3::new(
@@ -61,15 +68,15 @@ pub fn raycast(world: &World, ray: Ray, max_distance: f32) -> Option<RayHit> {
         ray.origin.z.floor() as i32,
     );
 
-    if let Some(block) = world.get_block(cell) {
-        if block.solid() {
-            return Some(RayHit {
-                block_position: cell,
-                place_position: None,
-                face_normal: cgmath::Vector3::new(0, 0, 0),
-                block,
-            });
-        }
+    if let Some(block) = world.get_block(cell)
+        && block.solid()
+    {
+        return Some(RayHit {
+            block_position: cell,
+            place_position: None,
+            face_normal: cgmath::Vector3::new(0, 0, 0),
+            block,
+        });
     }
 
     let step = cgmath::Vector3::new(
@@ -127,15 +134,15 @@ pub fn raycast(world: &World, ray: Ray, max_distance: f32) -> Option<RayHit> {
             face_normal = cgmath::Vector3::new(0, 0, -step.z);
         }
 
-        if let Some(block) = world.get_block(cell) {
-            if block.solid() {
-                return Some(RayHit {
-                    block_position: cell,
-                    place_position: Some(previous_cell),
-                    face_normal,
-                    block,
-                });
-            }
+        if let Some(block) = world.get_block(cell)
+            && block.solid()
+        {
+            return Some(RayHit {
+                block_position: cell,
+                place_position: Some(previous_cell),
+                face_normal,
+                block,
+            });
         }
     }
 }

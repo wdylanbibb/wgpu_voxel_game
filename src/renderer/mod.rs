@@ -11,6 +11,21 @@ use crate::{
     world::meshing::CpuChunkMesh,
 };
 
+const OUTLINE_VERTICES: [[f32; 3]; 8] = [
+    [0.0, 0.0, 0.0],
+    [1.0, 0.0, 0.0],
+    [1.0, 1.0, 0.0],
+    [0.0, 1.0, 0.0],
+    [0.0, 0.0, 1.0],
+    [1.0, 0.0, 1.0],
+    [1.0, 1.0, 1.0],
+    [0.0, 1.0, 1.0],
+];
+const OUTLINE_INDICES: [u16; 24] = [
+    0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7,
+];
+const OUTLINE_ATTRIBUTES: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x3];
+
 pub mod gpu;
 pub mod hdr;
 pub mod model;
@@ -33,12 +48,18 @@ pub struct Renderer {
 
     chunk_pipeline: wgpu::RenderPipeline,
     sky_pipeline: wgpu::RenderPipeline,
+    outline_pipeline: wgpu::RenderPipeline,
+    crosshair_pipeline: wgpu::RenderPipeline,
 
     depth_texture: texture::Texture,
     hdr: hdr::HdrPipeline,
     environment_bind_group: wgpu::BindGroup,
     chunk_material: model::ChunkMaterial,
     chunk_meshes: HashMap<cgmath::Vector3<i32>, model::GpuChunkMesh>,
+    outline_vertex_buffer: wgpu::Buffer,
+    outline_index_buffer: wgpu::Buffer,
+    outline_target_buffer: wgpu::Buffer,
+    outline_target_bind_group: wgpu::BindGroup,
 }
 
 impl Renderer {
@@ -185,6 +206,21 @@ impl Renderer {
                 ],
             });
 
+        let outline_target_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("outline_target_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
@@ -227,6 +263,77 @@ impl Renderer {
                 &layout,
                 hdr.format(),
                 Some(texture::Texture::DEPTH_FORMAT),
+                &[],
+                wgpu::PrimitiveTopology::TriangleList,
+                shader,
+            )
+        };
+
+        let outline_pipeline = {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Outline Pipeline Layout"),
+                bind_group_layouts: &[Some(&camera_layout), Some(&outline_target_layout)],
+                immediate_size: 0,
+            });
+            let shader =
+                device.create_shader_module(wgpu::include_wgsl!("../shaders/outline.wgsl"));
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Outline Pipeline"),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[Some(wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &OUTLINE_ATTRIBUTES,
+                    })],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: hdr.format(),
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::LineList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    unclipped_depth: false,
+                    conservative: false,
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: texture::Texture::DEPTH_FORMAT,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+
+        let crosshair_pipeline = {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Crosshair Pipeline Layout"),
+                bind_group_layouts: &[],
+                immediate_size: 0,
+            });
+            let shader = wgpu::include_wgsl!("../shaders/crosshair.wgsl");
+            pipeline::create_render_pipeline(
+                &device,
+                &layout,
+                config.format.add_srgb_suffix(),
+                None,
                 &[],
                 wgpu::PrimitiveTopology::TriangleList,
                 shader,
@@ -286,6 +393,29 @@ impl Renderer {
         };
 
         let chunk_material = model::ChunkMaterial::new(&device, &queue, &layouts.chunk_material)?;
+        let outline_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Outline Vertex Buffer"),
+            contents: bytemuck::cast_slice(&OUTLINE_VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let outline_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Outline Index Buffer"),
+            contents: bytemuck::cast_slice(&OUTLINE_INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        let outline_target_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Outline Target Buffer"),
+            contents: bytemuck::cast_slice(&[[0.0_f32; 4]]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let outline_target_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("outline_target_bind_group"),
+            layout: &outline_target_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: outline_target_buffer.as_entire_binding(),
+            }],
+        });
 
         Ok(Self {
             surface,
@@ -297,12 +427,18 @@ impl Renderer {
 
             chunk_pipeline,
             sky_pipeline,
+            outline_pipeline,
+            crosshair_pipeline,
 
             depth_texture,
             hdr,
             environment_bind_group,
             chunk_material,
             chunk_meshes: HashMap::new(),
+            outline_vertex_buffer,
+            outline_index_buffer,
+            outline_target_buffer,
+            outline_target_bind_group,
         })
     }
 
@@ -334,9 +470,14 @@ impl Renderer {
         self.is_surface_configured = true;
     }
 
-    pub fn update(&mut self, dt: std::time::Duration) {}
+    pub fn update(&mut self, _dt: std::time::Duration) {}
 
-    pub fn render(&mut self, camera: &camera::CameraState) -> anyhow::Result<()> {
+    pub fn render(
+        &mut self,
+        camera: &camera::CameraState,
+        targeted_block: Option<cgmath::Vector3<i32>>,
+        show_crosshair: bool,
+    ) -> anyhow::Result<()> {
         if !self.is_surface_configured {
             return Ok(());
         }
@@ -368,6 +509,19 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
+
+        if let Some(position) = targeted_block {
+            self.queue.write_buffer(
+                &self.outline_target_buffer,
+                0,
+                bytemuck::cast_slice(&[[
+                    position.x as f32,
+                    position.y as f32,
+                    position.z as f32,
+                    0.0,
+                ]]),
+            );
+        }
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -412,9 +566,42 @@ impl Renderer {
             render_pass.set_bind_group(0, &camera.bind_group, &[]);
             render_pass.set_bind_group(1, &self.environment_bind_group, &[]);
             render_pass.draw(0..3, 0..1);
+
+            if targeted_block.is_some() {
+                render_pass.set_pipeline(&self.outline_pipeline);
+                render_pass.set_bind_group(0, &camera.bind_group, &[]);
+                render_pass.set_bind_group(1, &self.outline_target_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, self.outline_vertex_buffer.slice(..));
+                render_pass.set_index_buffer(
+                    self.outline_index_buffer.slice(..),
+                    wgpu::IndexFormat::Uint16,
+                );
+                render_pass.draw_indexed(0..OUTLINE_INDICES.len() as u32, 0, 0..1);
+            }
         }
 
         self.hdr.process(&mut encoder, &view);
+
+        if show_crosshair {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Crosshair Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.crosshair_pipeline);
+            pass.draw(0..12, 0..1);
+        }
 
         self.queue.submit(std::iter::once(encoder.finish()));
         self.queue.present(output);

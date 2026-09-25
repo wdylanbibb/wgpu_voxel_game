@@ -37,14 +37,13 @@ impl Camera {
     }
 
     pub fn calc_matrix(&self) -> Matrix4<f32> {
+        Matrix4::look_to_rh(self.position, self.forward(), Vector3::unit_y())
+    }
+
+    pub fn forward(&self) -> Vector3<f32> {
         let (sin_pitch, cos_pitch) = self.pitch.0.sin_cos();
         let (sin_yaw, cos_yaw) = self.yaw.0.sin_cos();
-
-        Matrix4::look_to_rh(
-            self.position,
-            Vector3::new(cos_pitch * cos_yaw, sin_pitch, cos_pitch * sin_yaw).normalize(),
-            Vector3::unit_y(),
-        )
+        Vector3::new(cos_pitch * cos_yaw, sin_pitch, cos_pitch * sin_yaw).normalize()
     }
 }
 
@@ -199,6 +198,7 @@ impl CameraController {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct Ray {
     pub origin: cgmath::Point3<f32>,
     pub direction: cgmath::Vector3<f32>,
@@ -264,8 +264,15 @@ impl CameraState {
         }
     }
 
-    pub fn update_look(&mut self, dt: Duration) {
+    pub fn update_look(&mut self, _dt: Duration) {
         self.controller.update_rotation(&mut self.camera);
+    }
+
+    pub fn view_ray(&self) -> Ray {
+        Ray {
+            origin: self.camera.position,
+            direction: self.camera.forward(),
+        }
     }
 
     pub fn upload(&mut self, queue: &wgpu::Queue) {

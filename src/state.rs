@@ -7,9 +7,21 @@ use winit::{
     window::{CursorGrabMode, Window},
 };
 
-use crate::{camera, game, input, player, renderer, world::meshing::mesh_chunk};
+use crate::{
+    camera, game,
+    input::{self, EditAction},
+    player, raycast, renderer,
+    world::{block::BlockId, meshing::mesh_chunk},
+};
 
 const MAX_PHYSICS_STEPS_PER_FRAME: usize = 8;
+const PLACEABLE_BLOCKS: [BlockId; 5] = [
+    BlockId::Grass,
+    BlockId::Dirt,
+    BlockId::Stone,
+    BlockId::Sand,
+    BlockId::Snow,
+];
 
 pub struct State {
     window: Arc<Window>,
@@ -17,6 +29,8 @@ pub struct State {
     game: game::Game,
     camera: camera::CameraState,
     input: input::InputState,
+    selected_block: usize,
+    targeted_block: Option<cgmath::Vector3<i32>>,
     physics_accumulator: f32,
 }
 
@@ -47,6 +61,8 @@ impl State {
             game,
             camera,
             input,
+            selected_block: 1,
+            targeted_block: None,
             physics_accumulator: 0.0,
         })
     }
@@ -85,6 +101,23 @@ impl State {
         }
 
         self.camera.set_position(self.game.player.eye_position());
+
+        let selected_block = PLACEABLE_BLOCKS[self.selected_block];
+        for action in self.input.take_edit_actions().collect::<Vec<_>>() {
+            let ray = self.camera.view_ray();
+            match action {
+                EditAction::Break => self.game.break_block(ray),
+                EditAction::Place => self.game.place_block(ray, selected_block),
+            };
+        }
+
+        self.targeted_block = raycast::raycast(
+            &self.game.world,
+            self.camera.view_ray(),
+            game::BLOCK_INTERACTION_REACH,
+        )
+        .map(|hit| hit.block_position);
+
         self.camera.upload(&self.renderer.queue);
 
         self.sync_chunk_meshes();
@@ -94,7 +127,11 @@ impl State {
     pub fn render(&mut self) -> anyhow::Result<()> {
         self.window.request_redraw();
 
-        self.renderer.render(&self.camera)
+        self.renderer.render(
+            &self.camera,
+            self.targeted_block,
+            self.input.cursor_captured,
+        )
     }
 
     pub fn handle_key(&mut self, event_loop: &ActiveEventLoop, key: KeyCode, pressed: bool) {
@@ -139,7 +176,21 @@ impl State {
     }
 
     pub fn handle_mouse_scroll(&mut self, delta: &MouseScrollDelta) {
-        self.camera.handle_scroll(delta);
+        if !self.input.cursor_captured {
+            return;
+        }
+
+        let amount = match delta {
+            MouseScrollDelta::LineDelta(_, y) => *y,
+            MouseScrollDelta::PixelDelta(position) => position.y as f32,
+        };
+
+        if amount > 0.0 {
+            self.selected_block =
+                (self.selected_block + PLACEABLE_BLOCKS.len() - 1) % PLACEABLE_BLOCKS.len();
+        } else if amount < 0.0 {
+            self.selected_block = (self.selected_block + 1) % PLACEABLE_BLOCKS.len();
+        }
     }
 
     pub fn capture_cursor(&mut self) {

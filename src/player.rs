@@ -28,6 +28,16 @@ impl Player {
         self.position + Vector3::new(0.0, EYE_HEIGHT, 0.0)
     }
 
+    pub fn intersects_block(&self, block: Vector3<i32>) -> bool {
+        let (min, max) = self.bounds();
+        min.x < block.x as f32 + 1.0
+            && max.x > block.x as f32
+            && min.y < block.y as f32 + 1.0
+            && max.y > block.y as f32
+            && min.z < block.z as f32 + 1.0
+            && max.z > block.z as f32
+    }
+
     pub fn update(
         &mut self,
         world: &World,
@@ -192,5 +202,26 @@ fn move_towards(current: Vector2<f32>, target: Vector2<f32>, max_delta: f32) -> 
         target
     } else {
         current + delta / distance * max_delta
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use cgmath::Vector3;
+
+    use super::Player;
+
+    #[test]
+    fn detects_only_positive_block_overlap() {
+        let player = Player {
+            position: Vector3::new(0.5, 1.0, 0.5),
+            velocity: Vector3::new(0.0, 0.0, 0.0),
+            grounded: true,
+        };
+
+        assert!(player.intersects_block(Vector3::new(0, 1, 0)));
+        assert!(player.intersects_block(Vector3::new(0, 2, 0)));
+        assert!(!player.intersects_block(Vector3::new(0, 0, 0)));
+        assert!(!player.intersects_block(Vector3::new(1, 1, 0)));
     }
 }

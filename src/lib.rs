@@ -1,13 +1,13 @@
-mod camera;
-mod resources;
 mod app;
-mod state;
-mod renderer;
-mod input;
-mod world;
+mod camera;
 mod game;
+mod input;
 mod player;
 mod raycast;
+mod renderer;
+mod resources;
+mod state;
+mod world;
 
 pub use app::run;
 

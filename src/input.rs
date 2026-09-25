@@ -1,8 +1,13 @@
 use winit::keyboard::KeyCode;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditAction {
+    Break,
+    Place,
+}
+
 #[derive(Default)]
 pub struct InputState {
-    pub mouse_pressed: bool,
     pub cursor_captured: bool,
     forward: bool,
     backward: bool,
@@ -10,6 +15,7 @@ pub struct InputState {
     right: bool,
     jump_held: bool,
     jump_queued: bool,
+    edit_actions: std::collections::VecDeque<EditAction>,
 }
 
 impl InputState {
@@ -53,7 +59,32 @@ impl InputState {
         std::mem::take(&mut self.jump_queued)
     }
 
-    pub fn queue_break(&self) {}
+    pub fn queue_break(&mut self) {
+        self.edit_actions.push_back(EditAction::Break);
+    }
 
-    pub fn queue_place(&self) {}
+    pub fn queue_place(&mut self) {
+        self.edit_actions.push_back(EditAction::Place);
+    }
+
+    pub fn take_edit_actions(&mut self) -> impl Iterator<Item = EditAction> + '_ {
+        self.edit_actions.drain(..)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{EditAction, InputState};
+
+    #[test]
+    fn edit_actions_keep_press_order() {
+        let mut input = InputState::default();
+        input.queue_break();
+        input.queue_place();
+
+        assert_eq!(
+            input.take_edit_actions().collect::<Vec<_>>(),
+            vec![EditAction::Break, EditAction::Place]
+        );
+    }
 }

@@ -1,6 +1,12 @@
 use std::range::Range;
 
-use crate::{player, world};
+use crate::{
+    camera::Ray,
+    player, raycast,
+    world::{self, block::BlockId},
+};
+
+pub const BLOCK_INTERACTION_REACH: f32 = 6.0;
 
 pub struct Game {
     pub world: world::World,
@@ -34,5 +40,32 @@ impl Game {
     ) {
         self.player
             .update(&self.world, movement, forward, right, jump, dt);
+    }
+
+    pub fn break_block(&mut self, ray: Ray) -> bool {
+        let Some(hit) = raycast::raycast(&self.world, ray, BLOCK_INTERACTION_REACH) else {
+            return false;
+        };
+
+        self.world.set_block(hit.block_position, BlockId::Air)
+    }
+
+    pub fn place_block(&mut self, ray: Ray, block: BlockId) -> bool {
+        let Some(hit) = raycast::raycast(&self.world, ray, BLOCK_INTERACTION_REACH) else {
+            return false;
+        };
+        let Some(position) = hit.place_position else {
+            return false;
+        };
+
+        let Some(existing) = self.world.get_block(position) else {
+            return false;
+        };
+
+        if self.player.intersects_block(position) || existing.solid() {
+            return false;
+        }
+
+        self.world.set_block(position, block)
     }
 }

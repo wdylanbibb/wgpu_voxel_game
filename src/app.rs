@@ -1,5 +1,9 @@
 use std::sync::Arc;
 
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
+#[cfg(target_arch = "wasm32")]
+use winit::platform::web::EventLoopExtWebSys;
 use winit::{
     application::ApplicationHandler,
     event::{DeviceEvent, DeviceId, KeyEvent, WindowEvent},
@@ -7,10 +11,6 @@ use winit::{
     keyboard::PhysicalKey,
     window::Window,
 };
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::prelude::*;
-#[cfg(target_arch = "wasm32")]
-use winit::platform::web::EventLoopExtWebSys;
 
 use crate::state::State;
 
