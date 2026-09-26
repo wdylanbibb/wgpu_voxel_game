@@ -16,6 +16,23 @@
         wayland
         vulkan-loader
       ];
+      # Trunk needs a wasm-bindgen CLI matching the crate version selected by
+      # Cargo. Fetch it as a fixed Nix input so the sandboxed build never asks
+      # Trunk to create a cache or download a tool at build time.
+      wasmBindgenCli = pkgs.stdenvNoCC.mkDerivation {
+        pname = "wasm-bindgen-cli";
+        version = "0.2.127";
+        src = pkgs.fetchurl {
+          url = "https://github.com/rustwasm/wasm-bindgen/releases/download/0.2.127/wasm-bindgen-0.2.127-x86_64-unknown-linux-musl.tar.gz";
+          sha256 = "0jk1q4yyv5d7pa7g45vdfhmfbir834vbih6cahihvymchpfagm31";
+        };
+        sourceRoot = "wasm-bindgen-0.2.127-x86_64-unknown-linux-musl";
+        installPhase = ''
+          install -Dm755 wasm-bindgen "$out/bin/wasm-bindgen"
+          install -Dm755 wasm-bindgen-test-runner "$out/bin/wasm-bindgen-test-runner"
+          install -Dm755 wasm2es6js "$out/bin/wasm2es6js"
+        '';
+      };
       nativeRunner = pkgs.writeShellApplication {
         name = "wgpu-voxel-game-native";
         runtimeInputs = with pkgs; [ cargo rustc pkg-config ];
@@ -26,7 +43,7 @@
       };
       webRunner = pkgs.writeShellApplication {
         name = "wgpu-voxel-game-web";
-        runtimeInputs = with pkgs; [ cargo rustc trunk binaryen lld ];
+        runtimeInputs = with pkgs; [ cargo rustc trunk binaryen lld wasmBindgenCli ];
         text = ''
           NO_COLOR=false exec trunk serve --open "$@"
         '';
@@ -50,10 +67,13 @@
         src = ./.;
 
         cargoLock.lockFile = ./Cargo.lock;
-        nativeBuildInputs = with pkgs; [ trunk binaryen lld ];
+        nativeBuildInputs = with pkgs; [ trunk binaryen lld wasmBindgenCli ];
 
         buildPhase = ''
           runHook preBuild
+          export HOME="$NIX_BUILD_TOP/home"
+          export XDG_CACHE_HOME="$HOME/.cache"
+          mkdir -p "$XDG_CACHE_HOME"
           NO_COLOR=false trunk build --release --dist "$NIX_BUILD_TOP/dist"
           runHook postBuild
         '';
